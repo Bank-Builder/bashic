@@ -36,11 +36,8 @@ get_key() {
         # Read a single character with timeout
         read -r -n1 -t 0.1 char || true
         
-        # Break on EOF or Enter key
-        if [ $? -gt 128 ]; then
-            echo ""
-            return
-        elif [ -z "$char" ] || [ "$char" = $'\n' ] || [ "$char" = $'\r' ]; then
+        # Check for timeout (no input)
+        if [ $? -gt 128 ] || [ -z "$char" ]; then
             echo ""
             return
         fi
