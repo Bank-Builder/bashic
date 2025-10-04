@@ -27,12 +27,12 @@ declare -a WHILE_STACK       # WHILE loop stack
 
 CURRENT_LINE=0
 PROGRAM_COUNTER=0
-RUNNING=false
-DEBUG=false
-INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
-OLD_TTY_SETTINGS=""  # Store original terminal settings
-declare -a DATA_ITEMS  # DATA statement items
-DATA_POINTER=0  # Current position in DATA_ITEMS
+BASHIC_RUNNING=false
+BASHIC_DEBUG=false
+BASHIC_INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
+BASHIC_OLD_TTY_SETTINGS=""  # Store original terminal settings
+declare -a BASHIC_DATA_ITEMS  # DATA statement items
+BASHIC_DATA_POINTER=0  # Current position in DATA_ITEMS
 
 # Error handling with context
 error_with_context() {
@@ -47,6 +47,7 @@ error_with_context() {
         context="$context)"
     fi
     
+    log_error "$message$context"
     echo "ERROR: $message$context" >&2
     exit 1
 }
@@ -66,11 +67,107 @@ usage() {
     exit 0
 }
 
+# Log file for execution tracking - will be set based on input file
+BASHIC_LOG_FILE=""
+
+# Debug stack trace variables (separate from BASIC call stack)
+declare -a DEBUG_CALL_STACK=()
+declare -i DEBUG_STACK_DEPTH=0
+
+# Initialize log file
+init_log() {
+    echo "=== BASHIC EXECUTION LOG - $(date) ===" > "$BASHIC_LOG_FILE"
+    echo "Program: ${PROGRAM_FILE:-UNKNOWN}" >> "$BASHIC_LOG_FILE"
+    echo "=========================================" >> "$BASHIC_LOG_FILE"
+}
+
+# Push to debug call stack
+push_debug_stack() {
+    local function_name="$1"
+    local args="$2"
+    DEBUG_CALL_STACK[$DEBUG_STACK_DEPTH]="$function_name($args)"
+    DEBUG_STACK_DEPTH=$((DEBUG_STACK_DEPTH + 1))
+    log_debug_stack "ENTER: $function_name($args)"
+}
+
+# Pop from debug call stack
+pop_debug_stack() {
+    if [[ $DEBUG_STACK_DEPTH -gt 0 ]]; then
+        DEBUG_STACK_DEPTH=$((DEBUG_STACK_DEPTH - 1))
+        local function_name="${DEBUG_CALL_STACK[$DEBUG_STACK_DEPTH]%%(*}"
+        log_debug_stack "EXIT:  $function_name"
+    fi
+}
+
+# Log debug stack trace
+log_debug_stack() {
+    local message="$1"
+    local timestamp=$(date '+%H:%M:%S.%3N')
+    local indent=""
+    for ((i=0; i<DEBUG_STACK_DEPTH; i++)); do
+        indent="  $indent"
+    done
+    echo "[$timestamp] DEBUG_STACK: $indent$message" >> "$BASHIC_LOG_FILE"
+}
+
+# Log execution details
+log_execution() {
+    local message="$1"
+    local timestamp=$(date '+%H:%M:%S.%3N')
+    echo "[$timestamp] LINE $CURRENT_LINE: $message" >> "$BASHIC_LOG_FILE"
+}
+
+# Log variable values
+log_variables() {
+    local timestamp=$(date '+%H:%M:%S.%3N')
+    echo "[$timestamp] VARIABLES:" >> "$BASHIC_LOG_FILE"
+    
+    # Log numeric variables
+    for var in "${!NUMERIC_VARS[@]}"; do
+        echo "[$timestamp]   NUMERIC: $var = ${NUMERIC_VARS[$var]}" >> "$BASHIC_LOG_FILE"
+    done
+    
+    # Log string variables  
+    for var in "${!STRING_VARS[@]}"; do
+        echo "[$timestamp]   STRING:  $var = \"${STRING_VARS[$var]}\"" >> "$BASHIC_LOG_FILE"
+    done
+    
+    # Log arrays
+    for var in "${!ARRAYS[@]}"; do
+        echo "[$timestamp]   ARRAY:   $var = ${ARRAYS[$var]}" >> "$BASHIC_LOG_FILE"
+    done
+}
+
+# Log function results
+log_function_result() {
+    local function_name="$1"
+    local result="$2"
+    local timestamp=$(date '+%H:%M:%S.%3N')
+    echo "[$timestamp] RESULT: $function_name() = \"$result\"" >> "$BASHIC_LOG_FILE"
+}
+
+# Log errors
+log_error() {
+    local message="$1"
+    local timestamp=$(date '+%H:%M:%S.%3N')
+    echo "[$timestamp] ERROR: $message" >> "$BASHIC_LOG_FILE"
+    echo "[$timestamp] DEBUG_STACK_TRACE:" >> "$BASHIC_LOG_FILE"
+    for ((i=DEBUG_STACK_DEPTH-1; i>=0; i--)); do
+        local indent=""
+        for ((j=0; j<i; j++)); do
+            indent="  $indent"
+        done
+        echo "[$timestamp]   $indent${DEBUG_CALL_STACK[$i]}" >> "$BASHIC_LOG_FILE"
+    done
+}
+
 # Debug output
 debug() {
-    if [[ "$DEBUG" == "true" ]]; then
+    if [[ "$BASHIC_DEBUG" == "true" ]]; then
         echo "DEBUG: $1" >&2
     fi
+    # Also log to file
+    log_execution "DEBUG: $1"
 }
 
 # Trim whitespace from string
@@ -208,17 +305,33 @@ math_rnd() {
 # Global variables for keyboard input
 BASHIC_INKEY_BUFFER=""  # Buffer for non-interactive input
 BASHIC_TTY_SETTINGS=""  # Store original terminal settings
+BASHIC_INKEY_SEMAPHORE=0  # Semaphore counter for INKEY$ (0 = available, >0 = busy)
+BASHIC_INKEY_TIMEOUT=1  # Default timeout for INKEY$ (1 second)
 
 # Initialize keyboard handling
 init_keyboard() {
-    # Save current terminal settings and check if we're in a terminal
+    # Check if we're in a terminal - try multiple methods
+    local is_terminal=false
+    
+    # Method 1: Check if stdin is a terminal
     if [ -t 0 ]; then
-        BASHIC_TTY_SETTINGS=$(stty -g 2>/dev/null)
-        # Set terminal to raw mode with proper settings
-        stty raw -echo min 0 time 0 2>/dev/null || true
-    else
-        BASHIC_TTY_SETTINGS=""
+        is_terminal=true
     fi
+    
+    # Method 2: Check if we have a controlling terminal
+    if [ -t 1 ] && [ -c /dev/tty ]; then
+        is_terminal=true
+    fi
+    
+    # Method 3: Check if TERM environment variable is set (indicates terminal)
+    # Even "dumb" terminals can be interactive for our purposes
+    if [ -n "$TERM" ]; then
+        is_terminal=true
+    fi
+    
+    # Force non-interactive mode to avoid hanging
+    debug "Forcing non-interactive mode"
+    BASHIC_TTY_SETTINGS=""
 }
 
 # Function to convert key to readable name
@@ -244,31 +357,48 @@ cleanup_keyboard() {
 
 # Get a single character from keyboard or buffer
 get_key() {
-    local char
-    if [ -t 0 ]; then
-        # Use read with timeout
-        IFS= read -r -n1 -t 1 char 2>/dev/null || char=""
-    else
-        IFS= read -r -n1 -t 4 char || char=""
-    fi
-
-    printf '%s' "$char"
+    local timeout="${1:-1}"  # Default to 1 second timeout
+    local char=""
+    
+    # Always return empty for now
+    char=""
+    echo "$char"
 }
 
 
 
-# INKEY$ function for BASIC compatibility
+# INKEY$ function for BASIC compatibility - SEMAPHORE PROTECTED
 INKEY_STR() {
-    local key=$(get_key)
+    # Semaphore: increment counter to claim access
+    BASHIC_INKEY_SEMAPHORE=$((BASHIC_INKEY_SEMAPHORE + 1))
+    debug "INKEY$ semaphore incremented to: $BASHIC_INKEY_SEMAPHORE"
+    
+    # Wait while semaphore is > 1 (another call is active)
+    while [ $BASHIC_INKEY_SEMAPHORE -gt 1 ]; do
+        debug "INKEY$ waiting - semaphore: $BASHIC_INKEY_SEMAPHORE"
+        sleep 0.01  # Short wait
+    done
+    
+    debug "INKEY$ acquired access - semaphore: $BASHIC_INKEY_SEMAPHORE"
+    
+    local timeout="${1:-0}"  # Default to no timeout
+    local key=$(get_key "$timeout")
+    
+    debug "INKEY$ got key: '$key'"
+    
     if [ -n "$key" ]; then
-        key_name "$key"
+        echo "$key"
     else
         echo ""
     fi
+    
+    # Semaphore: decrement counter to release access
+    BASHIC_INKEY_SEMAPHORE=$((BASHIC_INKEY_SEMAPHORE - 1))
+    debug "INKEY$ released access - semaphore: $BASHIC_INKEY_SEMAPHORE"
 }
 
-# Set up cleanup trap
-trap cleanup_keyboard EXIT
+# Set up cleanup trap - temporarily disabled
+# trap cleanup_keyboard EXIT
 # ===== STRING MODULE =====
 #!/bin/bash
 # BASHIC String Functions Module
@@ -459,6 +589,7 @@ evaluate_expression() {
     local expr="${1:-}"
     expr=$(trim "$expr")
     
+    push_debug_stack "evaluate_expression" "\"$expr\""
     debug "Evaluating expression: $expr"
     
     # Handle string literals
@@ -635,9 +766,13 @@ evaluate_expression() {
         local array_type="${array_info%:*}"
         local array_size="${array_info#*:}"
         
+        debug "Array access: array_name='${array_name:-UNKNOWN}', array_info='${array_info:-UNKNOWN}', array_type='${array_type:-UNKNOWN}', array_size='${array_size:-UNKNOWN}', index='${index:-UNKNOWN}'"
+        log_execution "Array access: ${array_name:-UNKNOWN}(${index:-UNKNOWN}) - size: ${array_size:-UNKNOWN}"
+        
         # Check bounds
         if [[ ${index:-0} -lt 0 || ${index:-0} -gt ${array_size:-0} ]]; then
-            error "Array index out of bounds: $array_name(${index:-0})"
+            debug "Array bounds check failed: array_name='${array_name:-UNKNOWN}', index=${index:-0}, array_size=${array_size:-0}"
+            error "Array index out of bounds: ${array_name:-UNKNOWN}(${index:-0})"
         fi
         
         # Return array element value
@@ -724,6 +859,8 @@ evaluate_expression() {
     
     # Default: return as-is
     echo "$expr"
+    
+    pop_debug_stack
 }
 
 # Evaluate simple condition
@@ -1161,7 +1298,8 @@ execute_let() {
         
         # Check bounds
         if [[ ${index:-0} -lt 0 || ${index:-0} -gt ${array_size:-0} ]]; then
-            error "Array index out of bounds: $array_name(${index:-0})"
+            debug "Array bounds check failed: array_name='${array_name:-UNKNOWN}', index=${index:-0}, array_size=${array_size:-0}"
+            error "Array index out of bounds: ${array_name:-UNKNOWN}(${index:-0})"
         fi
         
         # Store array element
@@ -1334,6 +1472,7 @@ execute_statement() {
     local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
+    push_debug_stack "execute_statement" "\"$stmt\""
     debug "Executing: $stmt"
     
     # Skip empty statements and comments
@@ -1347,7 +1486,7 @@ execute_statement() {
     case "$upper_stmt" in
         END|STOP)
             debug "Program ended"
-            RUNNING=false
+            BASHIC_RUNNING=false
             ;;
         CLS)
             screen_cls
@@ -1491,6 +1630,8 @@ execute_statement() {
             fi
             ;;
     esac
+    
+    pop_debug_stack
 }
 
 # ===== CORE MODULE =====
@@ -1506,32 +1647,22 @@ load_program() {
         error "File not found: $filename"
     fi
     
-    debug "Loading program: $filename"
+    # Set up log file to match input filename
+    PROGRAM_FILE="$filename"
+    local basename=$(basename "$filename" .bas)
+    BASHIC_LOG_FILE="${basename}.log"
     
-    # Set up terminal for INKEY$ handling
-    if [[ -t 0 ]]; then
-        debug "stdin is a terminal - setting up interactive mode"
-        # Save current terminal settings
-        OLD_TTY_SETTINGS=$(stty -g)
-        # Set terminal to raw mode
-        stty raw -echo
-        
-        # Function to handle cleanup
-        cleanup_terminal() {
-            if [[ -n "$OLD_TTY_SETTINGS" ]]; then
-                debug "Restoring terminal settings"
-                stty "$OLD_TTY_SETTINGS" </dev/tty 2>/dev/null || true
-            fi
-        }
-        
-        # Trap for cleanup on script exit
-        trap cleanup_terminal EXIT
-    else
-        debug "stdin is not a terminal - reading input for buffer"
-        # Read all input into buffer for non-interactive mode
-        INKEY_BUFFER=$(cat)
-        debug "INKEY_BUFFER filled with ${#INKEY_BUFFER} characters"
-    fi
+    debug "Loading program: $filename"
+    debug "Log file: $BASHIC_LOG_FILE"
+    
+    # Initialize keyboard handling
+    init_keyboard
+    
+    # Always use non-interactive mode for now
+    debug "Forcing non-interactive mode - setting empty buffer"
+    BASHIC_INKEY_BUFFER=""
+    BASHIC_INKEY_SEMAPHORE=0
+    debug "BASHIC_INKEY_BUFFER set to empty, BASHIC_INKEY_SEMAPHORE set to 0"
     
     # Clear existing program
     PROGRAM_LINES=()
@@ -1800,8 +1931,10 @@ find_next_line() {
 # Run program
 run_program() {
     debug "Starting program execution"
+    # init_log
+    # log_execution "Program execution started"
     
-    RUNNING=true
+    BASHIC_RUNNING=true
     CURRENT_LINE=0
     
     # Start with first line
@@ -1814,15 +1947,16 @@ run_program() {
     
     CURRENT_LINE="${line_numbers[0]}"
     
-    while [[ "$RUNNING" == "true" ]]; do
+    while [[ "$BASHIC_RUNNING" == "true" ]]; do
         local stmt="${PROGRAM_LINES[$CURRENT_LINE]}"
         local saved_line="$CURRENT_LINE"
         
-        debug "Executing line $CURRENT_LINE: $stmt"
+        # debug "Executing line $CURRENT_LINE: $stmt"
+        # log_execution "Executing: $stmt"
         
         execute_statement "$stmt"
         
-        if [[ "$RUNNING" == "true" ]]; then
+        if [[ "$BASHIC_RUNNING" == "true" ]]; then
             # Check if statement changed the line (GOTO, ON GOTO, etc.)
             if [[ "$CURRENT_LINE" != "$saved_line" ]]; then
                 # Line was changed by control flow - use new line on next iteration
@@ -1830,22 +1964,19 @@ run_program() {
             else
                 # Normal flow - advance to next line
                 local next_line=$(find_next_line "$CURRENT_LINE")
+                debug "Current line: $CURRENT_LINE, Next line: $next_line"
                 if [[ -n "$next_line" ]]; then
                     CURRENT_LINE="$next_line"
+                    debug "Advanced to line: $CURRENT_LINE"
                 else
-                    RUNNING=false
+                    debug "No next line found - ending program"
+                    BASHIC_RUNNING=false
                 fi
             fi
         fi
     done
     
     debug "Program execution completed"
-    
-    # Restore terminal settings if we were in interactive mode
-    if [[ -t 0 && -n "${saved_stty:-}" ]]; then
-        debug "Restoring terminal settings"
-        stty "$saved_stty" 2>/dev/null || true
-    fi
 }
 
 # Parse command line arguments
@@ -1853,7 +1984,7 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             -d|--debug)
-                DEBUG=true
+                BASHIC_DEBUG=true
                 shift
                 ;;
             -h|--help)

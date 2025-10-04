@@ -1,6 +1,0 @@
-10 DIM WORDS$(3)
-20 PRINT "Array declared"
-30 PRINT WORDS$(0)
-40 WORDS$(0) = "Word"
-50 PRINT WORDS$(0)
-60 END
