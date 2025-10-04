@@ -685,9 +685,22 @@ execute_if() {
     
     if [[ "$stmt" =~ ^(.+)[[:space:]]+THEN[[:space:]]+(.*)$ ]]; then
         local condition="${BASH_REMATCH[1]}"
-        local then_part="${BASH_REMATCH[2]}"
+        local then_else_part="${BASH_REMATCH[2]}"
         
-        # Simple condition evaluation (A > B, A = B, etc.)
+        # Check for ELSE clause
+        local then_part=""
+        local else_part=""
+        
+        if [[ "$then_else_part" =~ ^(.+)[[:space:]]+ELSE[[:space:]]+(.*)$ ]]; then
+            then_part="${BASH_REMATCH[1]}"
+            else_part="${BASH_REMATCH[2]}"
+            debug "IF with ELSE: then='$then_part', else='$else_part'"
+        else
+            then_part="$then_else_part"
+            debug "IF without ELSE: then='$then_part'"
+        fi
+        
+        # Reuse condition evaluation logic from existing IF and WHILE
         local result=false
         
         if [[ "$condition" =~ ^([^<>=!]+)[[:space:]]*([<>=!]+)[[:space:]]*(.+)$ ]]; then
@@ -711,14 +724,20 @@ execute_if() {
         debug "IF condition '$condition' evaluated to $result"
         
         if [[ "$result" == "true" ]]; then
-            # Execute THEN part
+            # Execute THEN part (reuse existing logic)
             if is_numeric "$then_part"; then
-                # GOTO line number
                 CURRENT_LINE="$then_part"
                 debug "IF: GOTO line $then_part"
             else
-                # Execute statement
                 execute_statement "$then_part"
+            fi
+        elif [[ -n "$else_part" ]]; then
+            # Execute ELSE part (same logic as THEN)
+            if is_numeric "$else_part"; then
+                CURRENT_LINE="$else_part"
+                debug "IF: ELSE GOTO line $else_part"
+            else
+                execute_statement "$else_part"
             fi
         fi
     else
