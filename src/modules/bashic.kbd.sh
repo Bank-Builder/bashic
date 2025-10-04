@@ -26,7 +26,6 @@ key_name() {
         $'\e') echo "ESC" ;;
         $'\t') echo "TAB" ;;
         $'\b'|$'\x7f') echo "BACKSPACE" ;;  # handle DEL too
-        ' ') echo "SPACE" ;;
         *) echo "$key" ;;
     esac
 }
