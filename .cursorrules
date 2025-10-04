@@ -42,6 +42,8 @@
 - Add new test cases to regression.bas when implementing new features
 - Don't iterate more than twice on solving a problem - stop and ask for guidance
 - Create test cases for new features
+- NEVER create new test files - use existing tests in tests/ directory
+- Select appropriate existing test files for debugging and validation
 
 ## File Organization
 - Keep project structure clean
