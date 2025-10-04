@@ -52,10 +52,16 @@ get_key() {
             echo ""
         fi
     else
-        # Non-interactive mode - read from stdin using dd
-        char=$(dd bs=1 count=1 2>/dev/null | head -c1)
-        if [ ${#char} -gt 0 ]; then
-            echo -n "$char"
+        # Non-interactive mode - read from stdin
+        if read -r -t 4 line; then
+            if [ -z "$line" ]; then
+                # Empty line means newline character
+                char=$'\n'
+                printf "%s" "$char"
+            else
+                char="${line:0:1}"
+                echo -n "$char"
+            fi
         else
             echo ""
         fi
