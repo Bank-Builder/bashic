@@ -1140,16 +1140,33 @@ load_program() {
                 error "Line number too large: $line_num"
             fi
             
-            # Split multiple statements by colon (GW-BASIC compatibility)
-            # But preserve colons in strings and comments
-            local stmts=()
+            # Check if statement contains colons (multi-statement line)
+            # Don't split REM comments or strings
+            local has_colon=false
             local upper_stmt="${statement^^}"
             
-            # If line is a REM or starts with ', don't split it
-            if [[ "$upper_stmt" =~ ^REM || "$statement" =~ ^\' ]]; then
-                stmts+=("$statement")
+            if [[ ! "$upper_stmt" =~ ^REM && ! "$statement" =~ ^\' ]]; then
+                # Check for colon outside of strings
+                local in_string=0
+                local i=0
+                while [[ $i -lt ${#statement} ]]; do
+                    local char="${statement:$i:1}"
+                    if [[ "$char" == '"' ]]; then
+                        in_string=$((1 - in_string))
+                    elif [[ "$char" == ":" && $in_string -eq 0 ]]; then
+                        has_colon=true
+                        break
+                    fi
+                    i=$((i + 1))
+                done
+            fi
+            
+            # If no colon or REM, store as single statement (original behavior)
+            if [[ "$has_colon" == "false" ]]; then
+                PROGRAM_LINES[$line_num]="$statement"
             else
                 # Split by colon, preserving colons in strings
+                local stmts=()
                 local current=""
                 local in_string=0
                 local i=0
@@ -1170,22 +1187,19 @@ load_program() {
                     i=$((i + 1))
                 done
                 [[ -n "$current" ]] && stmts+=("$current")
-            fi
-            
-            # Store statements - use original line number for first, then line.subindex for rest
-            # We need to keep original line numbers for GOTO/GOSUB compatibility
-            # Use format: line number gets stored directly, additional statements use line_num.1, line_num.2, etc.
-            # Since bash associative arrays handle string keys, we can use "10", "10.1", "10.2"
-            if [[ ${#stmts[@]} -gt 0 ]]; then
-                PROGRAM_LINES[$line_num]="${stmts[0]}"
                 
-                local stmt_idx=1
-                while [[ $stmt_idx -lt ${#stmts[@]} ]]; do
-                    local sub_line="${line_num}.${stmt_idx}"
-                    PROGRAM_LINES[$sub_line]="${stmts[$stmt_idx]}"
-                    debug "Multi-statement: line $line_num part $stmt_idx stored as $sub_line"
-                    stmt_idx=$((stmt_idx + 1))
-                done
+                # Store statements using fractional line numbers
+                if [[ ${#stmts[@]} -gt 0 ]]; then
+                    PROGRAM_LINES[$line_num]="${stmts[0]}"
+                    
+                    local stmt_idx=1
+                    while [[ $stmt_idx -lt ${#stmts[@]} ]]; do
+                        local sub_line="${line_num}.${stmt_idx}"
+                        PROGRAM_LINES[$sub_line]="${stmts[$stmt_idx]}"
+                        debug "Multi-statement: line $line_num part $stmt_idx stored as $sub_line"
+                        stmt_idx=$((stmt_idx + 1))
+                    done
+                fi
             fi
         fi
     done < "$filename"
@@ -1300,13 +1314,18 @@ find_next_line() {
     local line_numbers
     readarray -t line_numbers < <(get_line_numbers)
     
-    # Linear search for next line (handles fractional line numbers)
+    # Since lines are already sorted numerically (sort -n handles decimals)
+    # we just need to find the first line after current
     local next=""
+    local found_current=false
+    
     for line in "${line_numbers[@]}"; do
-        # Use awk for proper decimal comparison
-        if awk -v curr="$current" -v check="$line" 'BEGIN { exit !(check > curr) }'; then
+        if [[ "$found_current" == "true" ]]; then
             next="$line"
             break
+        fi
+        if [[ "$line" == "$current" ]]; then
+            found_current=true
         fi
     done
     
