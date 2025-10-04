@@ -42,8 +42,16 @@ get_key() {
             return
         fi
         
-        # Print the character (since echo is off)
-        echo -n "$char" > /dev/tty
+        # Print the character (since echo is off) - but skip special keys
+        case "$char" in
+            $'\n'|$'\r'|$'\e'|$'\t'|$'\b') 
+                # Don't echo special keys to avoid formatting issues
+                ;;
+            *) 
+                # Echo regular characters so user sees what they typed
+                echo -n "$char" > /dev/tty
+                ;;
+        esac
         echo "$char"
     else
         # Non-interactive mode - read from stdin
