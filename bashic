@@ -1126,7 +1126,7 @@ execute_for() {
     local stmt="$1"
     stmt=$(trim "$stmt")
     
-    if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
+    if [[ "$stmt" =~ ^([A-Za-z][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
         local var_name="${BASH_REMATCH[1]}"
         local start_val="${BASH_REMATCH[2]}"
         local end_val="${BASH_REMATCH[3]}"
@@ -1164,15 +1164,41 @@ execute_next() {
     
     # Get current variable value and increment
     local current_val="${NUMERIC_VARS[$var_name]}"
-    local new_val=$((current_val + step_val))
+    
+    # Check if we need floating point arithmetic
+    if [[ "$current_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
+        # Use bc for floating point arithmetic
+        local new_val=$(echo "scale=10; $current_val + $step_val" | bc -l)
+        # Remove trailing zeros and decimal point if not needed
+        new_val=$(echo "$new_val" | sed 's/\.0*$//')
+    else
+        # Use bash arithmetic for integers
+        local new_val=$((current_val + step_val))
+    fi
+    
     NUMERIC_VARS["$var_name"]="$new_val"
     
     # Check if loop should continue
     local continue_loop=false
-    if [[ $step_val -gt 0 ]]; then
-        [[ $new_val -le $end_val ]] && continue_loop=true
+    
+    # Check if we need floating point comparison
+    if [[ "$new_val" =~ \. ]] || [[ "$end_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
+        # Use bc for floating point comparison
+        local step_positive=$(echo "$step_val > 0" | bc -l)
+        if [[ "$step_positive" == "1" ]]; then
+            local result=$(echo "$new_val <= $end_val" | bc -l)
+            [[ "$result" == "1" ]] && continue_loop=true
+        else
+            local result=$(echo "$new_val >= $end_val" | bc -l)
+            [[ "$result" == "1" ]] && continue_loop=true
+        fi
     else
-        [[ $new_val -ge $end_val ]] && continue_loop=true
+        # Use bash arithmetic for integer comparison
+        if [[ $step_val -gt 0 ]]; then
+            [[ $new_val -le $end_val ]] && continue_loop=true
+        else
+            [[ $new_val -ge $end_val ]] && continue_loop=true
+        fi
     fi
     
     if [[ "$continue_loop" == "true" ]]; then
