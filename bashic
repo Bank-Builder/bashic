@@ -249,9 +249,13 @@ get_key() {
         # Use read with timeout
         IFS= read -r -n1 -t 1 char 2>/dev/null || char=""
     else
-        # Non-interactive mode: simulate a key press for testing
-        # Return a space character to simulate a key press
-        char=" "
+        # Non-interactive mode: check if we have buffered input
+        if [ -n "$INKEY_BUFFER" ]; then
+            char="${INKEY_BUFFER:0:1}"
+            INKEY_BUFFER="${INKEY_BUFFER:1}"
+        else
+            char=""
+        fi
     fi
 
     printf '%s' "$char"
