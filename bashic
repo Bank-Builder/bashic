@@ -930,7 +930,7 @@ evaluate_expression() {
     fi
     
     # Handle MOD operator (word-based operator)
-    if [[ "$expr" =~ ^([A-Z0-9_]+)\ +MOD\ +([A-Z0-9_]+)$ ]]; then
+    if [[ "$expr" =~ ^([A-Za-z0-9_]+)\ +MOD\ +([A-Za-z0-9_]+)$ ]]; then
         local left="${BASH_REMATCH[1]}"
         local right="${BASH_REMATCH[2]}"
         
@@ -982,7 +982,7 @@ evaluate_expression() {
     fi
     
     # Handle simple arithmetic (symbol-based operators)
-    if [[ "$expr" =~ ^([A-Z0-9_]+)\ *(\+|\-|\*|/)\ *([A-Z0-9_]+)$ ]]; then
+    if [[ "$expr" =~ ^([A-Za-z0-9_]+)\ *(\+|\-|\*|/)\ *([A-Za-z0-9_]+)$ ]]; then
         local left="${BASH_REMATCH[1]}"
         local op="${BASH_REMATCH[2]}"
         local right="${BASH_REMATCH[3]}"
