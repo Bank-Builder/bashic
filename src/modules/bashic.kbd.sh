@@ -10,9 +10,9 @@ BASHIC_TTY_SETTINGS=""  # Store original terminal settings
 init_keyboard() {
     # Save current terminal settings and check if we're in a terminal
     if [ -t 0 ]; then
-        BASHIC_TTY_SETTINGS=$(stty -g)
+        BASHIC_TTY_SETTINGS=$(stty -g 2>/dev/null)
         # Set terminal to raw mode with proper settings
-        stty raw -echo min 0 time 0
+        stty raw -echo min 0 time 0 2>/dev/null || true
     else
         BASHIC_TTY_SETTINGS=""
     fi
