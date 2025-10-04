@@ -132,7 +132,11 @@ load_program() {
 pre_parse_program() {
     debug "Pre-parsing program for DIM and DATA statements"
     
-    for line_num in "${!PROGRAM_LINES[@]}"; do
+    # Sort line numbers for DATA statement processing
+    local sorted_lines
+    readarray -t sorted_lines < <(printf '%s\n' "${!PROGRAM_LINES[@]}" | sort -n)
+    
+    for line_num in "${sorted_lines[@]}"; do
         local stmt="${PROGRAM_LINES[$line_num]}"
         local upper_stmt=$(echo "$stmt" | tr '[:lower:]' '[:upper:]')
         

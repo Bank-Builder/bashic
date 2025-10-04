@@ -191,7 +191,12 @@ math_rnd() {
     local n="$1"
     # Random number between 0 and 1
     # Use RANDOM (0-32767) and scale to 0-1
-    echo "scale=10; $RANDOM / 32767" | bc -l 2>/dev/null || echo "0.$RANDOM"
+    local result=$(echo "scale=6; $RANDOM / 32767" | bc -l 2>/dev/null || echo "0.$RANDOM")
+    # Ensure leading zero for values < 1
+    if [[ "$result" =~ ^\. ]]; then
+        result="0${result}"
+    fi
+    echo "$result"
 }
 
 # ===== STRING MODULE =====
@@ -264,6 +269,94 @@ str_tab() {
     # For simplicity, just return N spaces
     printf '%*s' "$col" ''
 }
+
+# ===== SCREEN MODULE =====
+#!/bin/bash
+# BASHIC Screen Functions Module
+# bashic.screen.sh - Screen control using ANSI escape codes
+
+# Global screen state
+CURRENT_FG_COLOR=37  # White foreground
+CURRENT_BG_COLOR=40  # Black background
+SCREEN_WIDTH=80
+
+# Clear screen
+screen_cls() {
+    echo -ne "\033[2J\033[H"
+}
+
+# Position cursor at row, column
+screen_locate() {
+    local row="${1:-1}"
+    local col="${2:-1}"
+    local cursor_visible="${3:-1}"  # Optional cursor visibility (ignored)
+    
+    # ANSI escape: ESC[row;colH
+    echo -ne "\033[${row};${col}H"
+}
+
+# Set text and background color
+screen_color() {
+    local fg="${1:-7}"  # Default white
+    local bg="${2:-0}"  # Default black
+    
+    # Convert BASIC color codes (0-15) to ANSI (30-37, 90-97 for fg; 40-47, 100-107 for bg)
+    # BASIC: 0=black, 1=blue, 2=green, 3=cyan, 4=red, 5=magenta, 6=brown/yellow, 7=white
+    # BASIC: 8-15 are bright versions
+    
+    local ansi_fg=37
+    local ansi_bg=40
+    
+    # Map foreground color
+    case "$fg" in
+        0) ansi_fg=30 ;;  # Black
+        1) ansi_fg=34 ;;  # Blue
+        2) ansi_fg=32 ;;  # Green
+        3) ansi_fg=36 ;;  # Cyan
+        4) ansi_fg=31 ;;  # Red
+        5) ansi_fg=35 ;;  # Magenta
+        6) ansi_fg=33 ;;  # Yellow
+        7) ansi_fg=37 ;;  # White
+        8) ansi_fg=90 ;;  # Bright Black (Gray)
+        9) ansi_fg=94 ;;  # Bright Blue
+        10) ansi_fg=92 ;; # Bright Green
+        11) ansi_fg=96 ;; # Bright Cyan
+        12) ansi_fg=91 ;; # Bright Red
+        13) ansi_fg=95 ;; # Bright Magenta
+        14) ansi_fg=93 ;; # Bright Yellow
+        15) ansi_fg=97 ;; # Bright White
+    esac
+    
+    # Map background color
+    case "$bg" in
+        0) ansi_bg=40 ;;  # Black
+        1) ansi_bg=44 ;;  # Blue
+        2) ansi_bg=42 ;;  # Green
+        3) ansi_bg=46 ;;  # Cyan
+        4) ansi_bg=41 ;;  # Red
+        5) ansi_bg=45 ;;  # Magenta
+        6) ansi_bg=43 ;;  # Yellow
+        7) ansi_bg=47 ;;  # White
+    esac
+    
+    CURRENT_FG_COLOR=$ansi_fg
+    CURRENT_BG_COLOR=$ansi_bg
+    
+    echo -ne "\033[${ansi_fg};${ansi_bg}m"
+}
+
+# Beep
+screen_beep() {
+    echo -ne "\a"
+}
+
+# Set screen width (just store, don't actually resize)
+screen_width() {
+    local width="$1"
+    SCREEN_WIDTH=$width
+    # Note: Can't actually resize terminal from bash
+}
+
 
 # ===== EVAL MODULE =====
 #!/bin/bash
@@ -1159,8 +1252,42 @@ execute_statement() {
             debug "Program ended"
             RUNNING=false
             ;;
-        KEY*|CLS|WIDTH*|LOCATE*|BEEP|COLOR*|SOUND*|POKE*|PEEK*|DEF*)
-            # GW-BASIC hardware/graphics commands - ignore (no-op stubs)
+        CLS)
+            screen_cls
+            ;;
+        LOCATE*)
+            local args="${stmt#*LOCATE}"
+            args=$(trim "$args")
+            if [[ "$args" =~ ^([0-9]+),([0-9]+) ]]; then
+                local row="${BASH_REMATCH[1]}"
+                local col="${BASH_REMATCH[2]}"
+                screen_locate "$row" "$col"
+            fi
+            ;;
+        COLOR*)
+            local args="${stmt#*COLOR}"
+            args=$(trim "$args")
+            if [[ "$args" =~ ^([0-9]+),([0-9]+) ]]; then
+                local fg="${BASH_REMATCH[1]}"
+                local bg="${BASH_REMATCH[2]}"
+                screen_color "$fg" "$bg"
+            elif [[ "$args" =~ ^([0-9]+) ]]; then
+                local fg="${BASH_REMATCH[1]}"
+                screen_color "$fg" "$CURRENT_BG_COLOR"
+            fi
+            ;;
+        BEEP)
+            screen_beep
+            ;;
+        WIDTH*)
+            local args="${stmt#*WIDTH}"
+            args=$(trim "$args")
+            if [[ "$args" =~ ^([0-9]+) ]]; then
+                screen_width "${BASH_REMATCH[1]}"
+            fi
+            ;;
+        KEY*|SOUND*|POKE*|PEEK*|DEF*)
+            # Other GW-BASIC hardware commands - ignore (no-op stubs)
             debug "Ignoring GW-BASIC command: ${upper_stmt%% *}"
             ;;
         DATA*)
@@ -1403,7 +1530,11 @@ load_program() {
 pre_parse_program() {
     debug "Pre-parsing program for DIM and DATA statements"
     
-    for line_num in "${!PROGRAM_LINES[@]}"; do
+    # Sort line numbers for DATA statement processing
+    local sorted_lines
+    readarray -t sorted_lines < <(printf '%s\n' "${!PROGRAM_LINES[@]}" | sort -n)
+    
+    for line_num in "${sorted_lines[@]}"; do
         local stmt="${PROGRAM_LINES[$line_num]}"
         local upper_stmt=$(echo "$stmt" | tr '[:lower:]' '[:upper:]')
         

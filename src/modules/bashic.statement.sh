@@ -305,8 +305,42 @@ execute_statement() {
             debug "Program ended"
             RUNNING=false
             ;;
-        KEY*|CLS|WIDTH*|LOCATE*|BEEP|COLOR*|SOUND*|POKE*|PEEK*|DEF*)
-            # GW-BASIC hardware/graphics commands - ignore (no-op stubs)
+        CLS)
+            screen_cls
+            ;;
+        LOCATE*)
+            local args="${stmt#*LOCATE}"
+            args=$(trim "$args")
+            if [[ "$args" =~ ^([0-9]+),([0-9]+) ]]; then
+                local row="${BASH_REMATCH[1]}"
+                local col="${BASH_REMATCH[2]}"
+                screen_locate "$row" "$col"
+            fi
+            ;;
+        COLOR*)
+            local args="${stmt#*COLOR}"
+            args=$(trim "$args")
+            if [[ "$args" =~ ^([0-9]+),([0-9]+) ]]; then
+                local fg="${BASH_REMATCH[1]}"
+                local bg="${BASH_REMATCH[2]}"
+                screen_color "$fg" "$bg"
+            elif [[ "$args" =~ ^([0-9]+) ]]; then
+                local fg="${BASH_REMATCH[1]}"
+                screen_color "$fg" "$CURRENT_BG_COLOR"
+            fi
+            ;;
+        BEEP)
+            screen_beep
+            ;;
+        WIDTH*)
+            local args="${stmt#*WIDTH}"
+            args=$(trim "$args")
+            if [[ "$args" =~ ^([0-9]+) ]]; then
+                screen_width "${BASH_REMATCH[1]}"
+            fi
+            ;;
+        KEY*|SOUND*|POKE*|PEEK*|DEF*)
+            # Other GW-BASIC hardware commands - ignore (no-op stubs)
             debug "Ignoring GW-BASIC command: ${upper_stmt%% *}"
             ;;
         DATA*)

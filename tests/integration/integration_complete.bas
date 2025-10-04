@@ -167,11 +167,33 @@
 1660 PRINT "  ✓ bashic.core.sh - Program management"
 1670 PRINT
 1680 PRINT "=========================================="
-1690 PRINT "BASHIC INTEGRATION TEST COMPLETED"
+1690 PRINT "TEST 13: New Features (Hangman Support)"
 1700 PRINT "=========================================="
-1710 PRINT "All modules tested and integrated successfully!"
-1720 PRINT "BASHIC interpreter is fully functional!"
-1730 END
-1740 REM Subroutine for GOSUB test
-2000 PRINT "  GOSUB subroutine executed"
-2010 RETURN
+1710 PRINT "RND(1) =", RND(1)
+1720 PRINT "TIME$ =", TIME$
+1730 PRINT "SPACE$(10): ["; SPACE$(10); "]"
+1740 PRINT "TAB(15): A"; TAB(15); "B"
+1750 READ W1$, W2$
+1760 PRINT "DATA/READ:", W1$, W2$
+1770 RESTORE
+1780 READ W$
+1790 PRINT "After RESTORE:", W$
+1800 LET IDX = 2
+1810 ON IDX GOTO 1900, 1910, 1920
+1820 PRINT "ON GOTO failed"
+1900 PRINT "Wrong": GOTO 1930
+1910 PRINT "ON GOTO: Correct (index 2)": GOTO 1930
+1920 PRINT "Wrong": GOTO 1930
+1930 PRINT "All new features working!"
+1940 PRINT
+1950 PRINT "=========================================="
+1960 PRINT "BASHIC INTEGRATION TEST COMPLETED"
+1970 PRINT "=========================================="
+1980 PRINT "All modules tested and integrated successfully!"
+1990 PRINT "BASHIC interpreter is fully functional!"
+2000 END
+2010 REM Subroutine for GOSUB test
+2020 PRINT "  GOSUB subroutine executed"
+2030 RETURN
+2040 REM DATA for new features test
+2050 DATA "First", "Second", "Third"

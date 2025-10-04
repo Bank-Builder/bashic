@@ -49,5 +49,10 @@ math_rnd() {
     local n="$1"
     # Random number between 0 and 1
     # Use RANDOM (0-32767) and scale to 0-1
-    echo "scale=10; $RANDOM / 32767" | bc -l 2>/dev/null || echo "0.$RANDOM"
+    local result=$(echo "scale=6; $RANDOM / 32767" | bc -l 2>/dev/null || echo "0.$RANDOM")
+    # Ensure leading zero for values < 1
+    if [[ "$result" =~ ^\. ]]; then
+        result="0${result}"
+    fi
+    echo "$result"
 }

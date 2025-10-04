@@ -36,6 +36,10 @@ echo "# ===== STRING MODULE =====" >> "$BUILD_DIR/bashic"
 cat "$MODULES_DIR/bashic.string.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
+echo "# ===== SCREEN MODULE =====" >> "$BUILD_DIR/bashic"
+cat "$MODULES_DIR/bashic.screen.sh" >> "$BUILD_DIR/bashic"
+
+echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== EVAL MODULE =====" >> "$BUILD_DIR/bashic"
 cat "$MODULES_DIR/bashic.eval.sh" >> "$BUILD_DIR/bashic"
 
