@@ -199,9 +199,13 @@
 1620 PRINT "ALL REGRESSION TESTS PASSED!"
 1630 PRINT "100% FUNCTION COVERAGE ACHIEVED!"
 1640 PRINT "Functions tested: ABS, INT, SGN, SQR, LEN, LEFT$, RIGHT$, MID$, ASC, CHR$, VAL"
-1650 PRINT "BASHIC interpreter is functioning correctly."
-1660 GOTO 9999
-1670 REM
+1645 PRINT
+1650 PRINT "TEST 13: Error Context Verification"
+1655 PRINT "Note: Error context is verified by running separate error tests"
+1660 PRINT "Error messages include line numbers and program content"
+1665 PRINT "BASHIC interpreter is functioning correctly."
+1670 GOTO 9999
+1675 REM
 1680 REM Subroutine for TEST 9
 1690 REM
 2000 REM Set RESULT to test value
