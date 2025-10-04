@@ -304,26 +304,21 @@ evaluate_expression() {
                 return
                 ;;
             "LEFT$")
-                debug "LEFT$ called with arg: '$arg'"
                 if [[ "$arg" =~ ^([^,]+),([^,]+)$ ]]; then
                     local str_arg="${BASH_REMATCH[1]}"
                     local len_arg="${BASH_REMATCH[2]}"
-                    debug "LEFT$ parsed: str='$str_arg', len='$len_arg'"
                     str_arg=$(evaluate_expression "$(trim "$str_arg")")
                     len_arg=$(evaluate_expression "$(trim "$len_arg")")
-                    debug "LEFT$ evaluated: str='$str_arg', len='$len_arg'"
                     str_left "$str_arg" "$len_arg"
                     return
-                else
-                    debug "LEFT$ regex failed to match: '$arg'"
                 fi
                 ;;
             "RIGHT$")
                 if [[ "$arg" =~ ^([^,]+),([^,]+)$ ]]; then
                     local str_arg="${BASH_REMATCH[1]}"
                     local len_arg="${BASH_REMATCH[2]}"
-                    str_arg=$(evaluate_expression "$str_arg")
-                    len_arg=$(evaluate_expression "$len_arg")
+                    str_arg=$(evaluate_expression "$(trim "$str_arg")")
+                    len_arg=$(evaluate_expression "$(trim "$len_arg")")
                     str_right "$str_arg" "$len_arg"
                     return
                 fi
@@ -333,9 +328,9 @@ evaluate_expression() {
                     local str_arg="${BASH_REMATCH[1]}"
                     local start_arg="${BASH_REMATCH[2]}"
                     local len_arg="${BASH_REMATCH[3]}"
-                    str_arg=$(evaluate_expression "$str_arg")
-                    start_arg=$(evaluate_expression "$start_arg")
-                    len_arg=$(evaluate_expression "$len_arg")
+                    str_arg=$(evaluate_expression "$(trim "$str_arg")")
+                    start_arg=$(evaluate_expression "$(trim "$start_arg")")
+                    len_arg=$(evaluate_expression "$(trim "$len_arg")")
                     str_mid "$str_arg" "$start_arg" "$len_arg"
                     return
                 fi
