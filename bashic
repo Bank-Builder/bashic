@@ -635,6 +635,74 @@ execute_next() {
     fi
 }
 
+# Evaluate a single condition (shared helper for IF and WHILE)
+evaluate_condition() {
+    local condition="$1"
+    local result=false
+    
+    if [[ "$condition" =~ ^([^<>=!]+)[[:space:]]*([<>=!]+)[[:space:]]*(.+)$ ]]; then
+        local left="${BASH_REMATCH[1]}"
+        local op="${BASH_REMATCH[2]}"
+        local right="${BASH_REMATCH[3]}"
+        
+        left=$(evaluate_expression "$(trim "$left")")
+        right=$(evaluate_expression "$(trim "$right")")
+        
+        case "$op" in
+            "=")  [[ "$left" == "$right" ]] && result=true ;;
+            "<>") [[ "$left" != "$right" ]] && result=true ;;
+            "<")  [[ $left -lt $right ]] && result=true ;;
+            ">")  [[ $left -gt $right ]] && result=true ;;
+            "<=") [[ $left -le $right ]] && result=true ;;
+            ">=") [[ $left -ge $right ]] && result=true ;;
+        esac
+    fi
+    
+    echo "$result"
+}
+
+# Evaluate compound condition with AND/OR operators
+evaluate_compound_condition() {
+    local condition="$1"
+    
+    # Handle AND operator (higher precedence)
+    if [[ "$condition" =~ ^(.+)[[:space:]]+AND[[:space:]]+(.+)$ ]]; then
+        local left_cond="${BASH_REMATCH[1]}"
+        local right_cond="${BASH_REMATCH[2]}"
+        
+        # Recursively evaluate both sides
+        local left_result=$(evaluate_compound_condition "$left_cond")
+        local right_result=$(evaluate_compound_condition "$right_cond")
+        
+        if [[ "$left_result" == "true" && "$right_result" == "true" ]]; then
+            echo "true"
+        else
+            echo "false"
+        fi
+        return
+    fi
+    
+    # Handle OR operator (lower precedence)
+    if [[ "$condition" =~ ^(.+)[[:space:]]+OR[[:space:]]+(.+)$ ]]; then
+        local left_cond="${BASH_REMATCH[1]}"
+        local right_cond="${BASH_REMATCH[2]}"
+        
+        # Recursively evaluate both sides
+        local left_result=$(evaluate_compound_condition "$left_cond")
+        local right_result=$(evaluate_compound_condition "$right_cond")
+        
+        if [[ "$left_result" == "true" || "$right_result" == "true" ]]; then
+            echo "true"
+        else
+            echo "false"
+        fi
+        return
+    fi
+    
+    # No logical operators - evaluate as simple condition
+    evaluate_condition "$condition"
+}
+
 # Execute WHILE statement
 execute_while() {
     local stmt="$1"
@@ -659,25 +727,8 @@ execute_wend() {
     local condition="${while_info%:*}"
     local while_line="${while_info#*:}"
     
-    # Evaluate the WHILE condition (reusing same logic as IF statement)
-    local result=false
-    if [[ "$condition" =~ ^([^<>=!]+)[[:space:]]*([<>=!]+)[[:space:]]*(.+)$ ]]; then
-        local left="${BASH_REMATCH[1]}"
-        local op="${BASH_REMATCH[2]}"
-        local right="${BASH_REMATCH[3]}"
-        
-        left=$(evaluate_expression "$left")
-        right=$(evaluate_expression "$right")
-        
-        case "$op" in
-            "=")  [[ "$left" == "$right" ]] && result=true ;;
-            "<>") [[ "$left" != "$right" ]] && result=true ;;
-            "<")  [[ $left -lt $right ]] && result=true ;;
-            ">")  [[ $left -gt $right ]] && result=true ;;
-            "<=") [[ $left -le $right ]] && result=true ;;
-            ">=") [[ $left -ge $right ]] && result=true ;;
-        esac
-    fi
+    # Evaluate the WHILE condition (using enhanced compound condition evaluator)
+    local result=$(evaluate_compound_condition "$condition")
     
     debug "WEND: condition '$condition' evaluated to $result"
     
@@ -714,26 +765,8 @@ execute_if() {
             debug "IF without ELSE: then='$then_part'"
         fi
         
-        # Reuse condition evaluation logic from existing IF and WHILE
-        local result=false
-        
-        if [[ "$condition" =~ ^([^<>=!]+)[[:space:]]*([<>=!]+)[[:space:]]*(.+)$ ]]; then
-            local left="${BASH_REMATCH[1]}"
-            local op="${BASH_REMATCH[2]}"
-            local right="${BASH_REMATCH[3]}"
-            
-            left=$(evaluate_expression "$left")
-            right=$(evaluate_expression "$right")
-            
-            case "$op" in
-                "=")  [[ "$left" == "$right" ]] && result=true ;;
-                "<>") [[ "$left" != "$right" ]] && result=true ;;
-                "<")  [[ $left -lt $right ]] && result=true ;;
-                ">")  [[ $left -gt $right ]] && result=true ;;
-                "<=") [[ $left -le $right ]] && result=true ;;
-                ">=") [[ $left -ge $right ]] && result=true ;;
-            esac
-        fi
+        # Evaluate condition using enhanced compound condition evaluator
+        local result=$(evaluate_compound_condition "$condition")
         
         debug "IF condition '$condition' evaluated to $result"
         
