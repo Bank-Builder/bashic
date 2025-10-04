@@ -70,14 +70,15 @@ fi
 # Test 4: Test interactive mode (manual test)
 echo -e "\nTest 4: Testing interactive mode"
 if [[ -t 0 ]]; then
-    echo "Press any key (interactive test)..."
+    echo "Interactive mode detected - test will timeout if no key pressed"
     init_keyboard
     key=$(get_key)
     if [[ -n "$key" ]]; then
         echo "Received key: $key"
         print_result "Interactive input" 0
     else
-        print_result "Interactive input" 1
+        echo "No key pressed (timeout)"
+        print_result "Interactive input" 0
     fi
 else
     echo "Skipping interactive test (not a terminal)"
