@@ -58,6 +58,13 @@
 - Update documentation as needed
 - Don't add unnecessary complexity
 
+## Problem Solving Process
+- When trying to iteratively solve any problem, create a list of steps first
+- Break complex problems into discrete, testable steps
+- Document the approach before implementation
+- Validate each step before proceeding to the next
+- If stuck after 2 iterations, stop and reassess the approach
+
 ## Efficiency Guidelines
 - Use parallel operations when possible
 - Prefer built-in bash features over external tools
