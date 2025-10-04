@@ -6,6 +6,11 @@
 
 set -euo pipefail
 
+# Constants
+readonly MAX_ARRAY_SIZE=10000
+readonly BASIC_INDEX_BASE=1  # BASIC uses 1-based indexing
+readonly MAX_LINE_NUMBER=99999
+
 # Global variables
 declare -A PROGRAM_LINES      # Program lines indexed by line number
 declare -A NUMERIC_VARS       # Numeric variables
@@ -99,11 +104,6 @@ debug() {
 pre_parse_program() {
     debug "Pre-parsing program for array declarations"
     
-    # Ensure ARRAYS array is initialized
-    if [[ -z "${ARRAYS:-}" ]]; then
-        declare -A ARRAYS
-    fi
-    
     local line_num
     local line_content
     
@@ -124,8 +124,8 @@ pre_parse_program() {
                     error "Line $line_num: Array size cannot be negative: $var_name($array_size)"
                 fi
                 
-                if [[ $array_size -gt 10000 ]]; then
-                    error "Line $line_num: Array size too large (max 10000): $var_name($array_size)"
+                if [[ $array_size -gt $MAX_ARRAY_SIZE ]]; then
+                    error "Line $line_num: Array size too large (max $MAX_ARRAY_SIZE): $var_name($array_size)"
                 fi
                 
                 # Store array metadata
@@ -189,22 +189,40 @@ load_program() {
     pre_parse_program
 }
 
-# Get sorted line numbers
+# Global variable for sorted line numbers (cached)
+declare -a SORTED_LINE_NUMBERS
+
+# Get sorted line numbers (cached)
 get_line_numbers() {
-    printf '%s\n' "${!PROGRAM_LINES[@]}" | sort -n
+    if [[ -z "${SORTED_LINE_NUMBERS:-}" ]] || [[ ${#SORTED_LINE_NUMBERS[@]} -eq 0 ]]; then
+        readarray -t SORTED_LINE_NUMBERS < <(printf '%s\n' "${!PROGRAM_LINES[@]}" | sort -n)
+    fi
+    printf '%s\n' "${SORTED_LINE_NUMBERS[@]}"
 }
 
-# Find next line number after current
+# Find next line number after current (optimized with binary search)
 find_next_line() {
     local current="$1"
     local next=""
     
-    while read -r line_num; do
-        if [[ $line_num -gt $current ]]; then
-            next="$line_num"
-            break
+    # Ensure sorted line numbers are cached
+    get_line_numbers >/dev/null
+    
+    # Binary search for next line
+    local left=0
+    local right=$((${#SORTED_LINE_NUMBERS[@]} - 1))
+    
+    while [[ $left -le $right ]]; do
+        local mid=$(( (left + right) / 2 ))
+        local mid_line="${SORTED_LINE_NUMBERS[$mid]}"
+        
+        if [[ $mid_line -gt $current ]]; then
+            next="$mid_line"
+            right=$((mid - 1))
+        else
+            left=$((mid + 1))
         fi
-    done < <(get_line_numbers)
+    done
     
     echo "$next"
 }
@@ -290,7 +308,7 @@ str_mid() {
     local str="$1"
     local start="$2"
     local len="${3:-${#str}}"
-    start=$((start - 1))  # BASIC uses 1-based indexing
+    start=$((start - BASIC_INDEX_BASE))  # BASIC uses 1-based indexing
     [[ $start -lt 0 ]] && start=0
     echo "${str:$start:$len}"
 }
