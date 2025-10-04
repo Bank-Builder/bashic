@@ -758,9 +758,25 @@ evaluate_condition() {
     echo "$result"
 }
 
-# Evaluate compound condition with AND/OR operators
+# Evaluate compound condition with AND/OR/NOT operators
 evaluate_compound_condition() {
     local condition="$1"
+    
+    # Handle NOT operator (highest precedence)
+    if [[ "$condition" =~ ^NOT[[:space:]]+(.+)$ ]]; then
+        local inner_condition="${BASH_REMATCH[1]}"
+        
+        # Recursively evaluate the inner condition
+        local inner_result=$(evaluate_compound_condition "$inner_condition")
+        
+        # NOT logic: true becomes false, false becomes true
+        if [[ "$inner_result" == "true" ]]; then
+            echo "false"
+        else
+            echo "true"
+        fi
+        return
+    fi
     
     # Handle AND operator (higher precedence)
     if [[ "$condition" =~ ^(.+)[[:space:]]+AND[[:space:]]+(.+)$ ]]; then
