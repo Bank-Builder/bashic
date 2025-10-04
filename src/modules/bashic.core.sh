@@ -64,28 +64,73 @@ pre_parse_program() {
             local args="${BASH_REMATCH[1]}"
             args=$(trim "$args")
             
-            # Parse DIM statement: DIM ARRAY(SIZE) or DIM ARRAY$(SIZE)
-            if [[ "$args" =~ ^([A-Z][A-Z0-9_]*)(\$?)\(([0-9]+)\)$ ]]; then
-                local array_name="${BASH_REMATCH[1]}"
-                local is_string="${BASH_REMATCH[2]}"
-                local size="${BASH_REMATCH[3]}"
-                
-                # Validate array size
-                if [[ $size -gt $MAX_ARRAY_SIZE ]]; then
-                    error "Array size too large: $array_name($size)"
+            debug "DIM args: '$args'"
+            
+            # Split by comma, but only outside parentheses
+            declare -a array_decls
+            local current=""
+            local paren_count=0
+            local i=0
+            
+            while [[ $i -lt ${#args} ]]; do
+                local char="${args:$i:1}"
+                if [[ "$char" == "(" ]]; then
+                    paren_count=$((paren_count + 1))
+                    current="${current}${char}"
+                elif [[ "$char" == ")" ]]; then
+                    paren_count=$((paren_count - 1))
+                    current="${current}${char}"
+                elif [[ "$char" == "," && $paren_count -eq 0 ]]; then
+                    array_decls+=("$current")
+                    current=""
+                else
+                    current="${current}${char}"
                 fi
+                i=$((i + 1))
+            done
+            [[ -n "$current" ]] && array_decls+=("$current")
+            
+            debug "Found ${#array_decls[@]} array declarations"
+            
+            for array_decl in "${array_decls[@]}"; do
+                array_decl=$(trim "$array_decl")
                 
-                # Store array metadata
-                local array_type="numeric"
-                [[ -n "$is_string" ]] && array_type="string"
-                # Include $ in array name for string arrays for consistency
-                [[ -n "$is_string" ]] && array_name="${array_name}$"
-                ARRAYS[$array_name]="$array_type:$size"
+                debug "Parsing array declaration: '$array_decl'"
                 
-                debug "DIM: $array_name($size) - $array_type"
-            else
-                error "Invalid DIM statement: $stmt"
-            fi
+                # Parse DIM statement: ARRAY(SIZE) or ARRAY$(SIZE) or ARRAY(SIZE,SIZE) for 2D
+                # For 2D arrays, we'll use the first dimension as size
+                # SIZE can be a number or a variable name (for dynamic sizing)
+                if [[ "$array_decl" =~ ^([A-Z][A-Z0-9_]*)(\$?)\(([A-Z0-9_%]+)(,[A-Z0-9_%]+)?\)$ ]]; then
+                    local array_name="${BASH_REMATCH[1]}"
+                    local is_string="${BASH_REMATCH[2]}"
+                    local size_expr="${BASH_REMATCH[3]}"
+                    
+                    # Evaluate size expression (could be a variable or number)
+                    local size
+                    if [[ "$size_expr" =~ ^[0-9]+$ ]]; then
+                        size="$size_expr"
+                    else
+                        # Try to evaluate as variable
+                        size="${NUMERIC_VARS[$size_expr]:-100}"
+                    fi
+                    
+                    # Validate array size
+                    if [[ $size -gt $MAX_ARRAY_SIZE ]]; then
+                        error "Array size too large: $array_name($size)"
+                    fi
+                    
+                    # Store array metadata
+                    local array_type="numeric"
+                    [[ -n "$is_string" ]] && array_type="string"
+                    # Include $ in array name for string arrays for consistency
+                    [[ -n "$is_string" ]] && array_name="${array_name}$"
+                    ARRAYS[$array_name]="$array_type:$size"
+                    
+                    debug "DIM: $array_name($size) - $array_type"
+                else
+                    error "Invalid DIM statement: $stmt"
+                fi
+            done
         fi
     done
     
