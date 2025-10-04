@@ -1132,7 +1132,53 @@ load_program() {
                 error "Line number too large: $line_num"
             fi
             
-            PROGRAM_LINES[$line_num]="$statement"
+            # Split multiple statements by colon (GW-BASIC compatibility)
+            # But preserve colons in strings and comments
+            local stmts=()
+            local upper_stmt="${statement^^}"
+            
+            # If line is a REM or starts with ', don't split it
+            if [[ "$upper_stmt" =~ ^REM || "$statement" =~ ^\' ]]; then
+                stmts+=("$statement")
+            else
+                # Split by colon, preserving colons in strings
+                local current=""
+                local in_string=0
+                local i=0
+                
+                while [[ $i -lt ${#statement} ]]; do
+                    local char="${statement:$i:1}"
+                    if [[ "$char" == '"' ]]; then
+                        in_string=$((1 - in_string))
+                        current="${current}${char}"
+                    elif [[ "$char" == ":" && $in_string -eq 0 ]]; then
+                        if [[ -n "$current" ]]; then
+                            stmts+=("$current")
+                            current=""
+                        fi
+                    else
+                        current="${current}${char}"
+                    fi
+                    i=$((i + 1))
+                done
+                [[ -n "$current" ]] && stmts+=("$current")
+            fi
+            
+            # Store statements - use original line number for first, then line.subindex for rest
+            # We need to keep original line numbers for GOTO/GOSUB compatibility
+            # Use format: line number gets stored directly, additional statements use line_num.1, line_num.2, etc.
+            # Since bash associative arrays handle string keys, we can use "10", "10.1", "10.2"
+            if [[ ${#stmts[@]} -gt 0 ]]; then
+                PROGRAM_LINES[$line_num]="${stmts[0]}"
+                
+                local stmt_idx=1
+                while [[ $stmt_idx -lt ${#stmts[@]} ]]; do
+                    local sub_line="${line_num}.${stmt_idx}"
+                    PROGRAM_LINES[$sub_line]="${stmts[$stmt_idx]}"
+                    debug "Multi-statement: line $line_num part $stmt_idx stored as $sub_line"
+                    stmt_idx=$((stmt_idx + 1))
+                done
+            fi
         fi
     done < "$filename"
     
@@ -1246,23 +1292,15 @@ find_next_line() {
     local line_numbers
     readarray -t line_numbers < <(get_line_numbers)
     
-    # Binary search for next line
-    local left=0
-    local right=${#line_numbers[@]}
-    
-    while [[ $left -lt $right ]]; do
-        local mid=$(( (left + right) / 2 ))
-        if [[ ${line_numbers[$mid]} -le $current ]]; then
-            left=$((mid + 1))
-        else
-            right=$mid
+    # Linear search for next line (handles fractional line numbers)
+    local next=""
+    for line in "${line_numbers[@]}"; do
+        # Use awk for proper decimal comparison
+        if awk -v curr="$current" -v check="$line" 'BEGIN { exit !(check > curr) }'; then
+            next="$line"
+            break
         fi
     done
-    
-    local next=""
-    if [[ $left -lt ${#line_numbers[@]} ]]; then
-        next="${line_numbers[$left]}"
-    fi
     
     echo "$next"
 }
