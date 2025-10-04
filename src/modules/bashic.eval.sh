@@ -15,6 +15,33 @@ evaluate_expression() {
         return
     fi
     
+    # Handle INKEY$ special function (before string variables)
+    if [[ "$expr" == "INKEY$" ]]; then
+        # Non-blocking keyboard input - return empty or character
+        # Use global buffer (pre-loaded at program start for non-interactive)
+        local key=""
+        
+        debug "INKEY$: buffer length=${#INKEY_BUFFER}, first_char='${INKEY_BUFFER:0:1}'"
+        
+        # If buffer has content, return first character
+        if [[ -n "$INKEY_BUFFER" ]]; then
+            key="${INKEY_BUFFER:0:1}"
+            INKEY_BUFFER="${INKEY_BUFFER:1}"
+            
+            # Convert to uppercase if BASHIC_UPPER_CASE is set
+            local upper_mode="${BASHIC_UPPER_CASE:-${NUMERIC_VARS[BASHIC_UPPER_CASE]:-0}}"
+            if [[ "$upper_mode" == "1" ]]; then
+                key="${key^^}"
+            fi
+            echo "$key"
+        else
+            # No key available - add tiny sleep to reduce CPU usage in loops
+            sleep 0.01 2>/dev/null || true
+            echo ""
+        fi
+        return
+    fi
+    
     # Handle string variables
     if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*\$$ ]]; then
         local var_name="$expr"
@@ -118,24 +145,6 @@ evaluate_expression() {
             "STR$")
                 arg=$(evaluate_expression "$arg")
                 echo "$arg"
-                return
-                ;;
-            "INKEY$")
-                # Non-blocking keyboard input - return empty or character
-                # Use read with timeout for non-blocking behavior
-                local key=""
-                if read -t 0.05 -n 1 key 2>/dev/null; then
-                    # Convert to uppercase if BASHIC_UPPER_CASE is set
-                    local upper_mode="${BASHIC_UPPER_CASE:-${NUMERIC_VARS[BASHIC_UPPER_CASE]:-0}}"
-                    if [[ "$upper_mode" == "1" ]]; then
-                        key="${key^^}"
-                    fi
-                    echo "$key"
-                else
-                    # Add small sleep to prevent CPU spinning in tight INKEY$ loops
-                    sleep 0.01 2>/dev/null || true
-                    echo ""
-                fi
                 return
                 ;;
             *)

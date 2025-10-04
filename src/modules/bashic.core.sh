@@ -12,6 +12,20 @@ load_program() {
     
     debug "Loading program: $filename"
     
+    # Pre-read all stdin for INKEY$ (if stdin is not a terminal)
+    if [[ ! -t 0 ]]; then
+        debug "stdin is not a terminal - buffering input for INKEY$"
+        # Read all available stdin into INKEY_BUFFER for non-interactive mode
+        if read -t 0 2>/dev/null; then
+            IFS= read -r -d '' INKEY_BUFFER || INKEY_BUFFER+=$'\n'
+            debug "INKEY_BUFFER filled with ${#INKEY_BUFFER} characters"
+        else
+            debug "No input available on stdin"
+        fi
+    else
+        debug "stdin is a terminal - interactive mode"
+    fi
+    
     # Clear existing program
     PROGRAM_LINES=()
     NUMERIC_VARS=()

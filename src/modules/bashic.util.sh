@@ -20,6 +20,7 @@ CURRENT_LINE=0
 PROGRAM_COUNTER=0
 RUNNING=false
 DEBUG=false
+INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
 
 # Error handling with context
 error_with_context() {
