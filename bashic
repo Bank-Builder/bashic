@@ -277,7 +277,7 @@ evaluate_expression() {
     fi
     
     # Handle simple arithmetic (very basic)
-    if [[ "$expr" =~ ^([A-Z0-9]+)\ *([+\-*/])\ *([A-Z0-9]+)$ ]]; then
+    if [[ "$expr" =~ ^([A-Z0-9]+)\ *(\+|\-|\*|/)\ *([A-Z0-9]+)$ ]]; then
         local left="${BASH_REMATCH[1]}"
         local op="${BASH_REMATCH[2]}"
         local right="${BASH_REMATCH[3]}"
