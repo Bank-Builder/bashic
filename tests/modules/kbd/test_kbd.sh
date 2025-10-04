@@ -83,18 +83,7 @@ else
     echo "Non-interactive mode - skipping interactive test"
     print_result "Interactive input (skipped - not in terminal)" 0
 fi
-# else
-#     echo "Non-interactive mode - testing timeout behavior"
-#     init_keyboard
-#     key=$(get_key)
-#     if [[ -z "$key" ]]; then
-#         key_name="timeout"
-#         print_result "Interactive input ('$key_name')" 0
-#     else
-#         key_name=$(key_name "$key")
-#         print_result "Interactive input (unexpected key: '$key_name')" 1
-#     fi
-# fi
+
 
 # Print final results
 echo -e "\nTest Summary:"

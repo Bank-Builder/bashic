@@ -33,10 +33,92 @@ Create a BASIC interpreter using only bash that can execute .bas files with `./b
 - [x] Implement string literal parsing
 - [x] Implement variable reference evaluation
 - [x] Implement basic arithmetic operations (+, -, *, /)
-- [ ] **FIX REQUIRED**: Arithmetic expressions in PRINT statements not evaluating (A + B shows as "A + B")
+- [x] **COMPLETED**: Arithmetic expressions in PRINT statements now evaluating correctly
 - [x] Implement comparison operations (=, <>, <, >, <=, >=)
-- [ ] **ENHANCEMENT**: Implement operator precedence handling
-- [ ] **ENHANCEMENT**: Implement parentheses in expressions
+- [x] **COMPLETED**: Implement operator precedence handling with stack-based parser
+- [x] **COMPLETED**: Implement parentheses in expressions with inside-out evaluation
+- [x] **COMPLETED**: Create standalone expression module with stack-based evaluation
+- [x] **COMPLETED**: Implement BODMAS expression parser with inside-out bracket evaluation
+- [x] **COMPLETED**: Test TIME$ function in expressions
+- [ ] **IN PROGRESS**: Test ABS function in expressions (function call parsing issue)
+- [ ] **IN PROGRESS**: Test SQR function in expressions (function call parsing issue)
+- [ ] **IN PROGRESS**: Fix function call parsing in expressions (ABS(A) → ABS2 issue)
+- [ ] **IN PROGRESS**: Fix tokenizer to properly recognize all operators (* operator issue)
+
+## Missing Expression Operations (Future Implementation)
+
+### Logical Operators in Expressions (Not Yet Implemented)
+- [ ] **HIGH PRIORITY**: Implement AND logical operator in expressions
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Add AND to tokenizer and precedence handling
+  - Usage: `A > 5 AND B < 10` (boolean result)
+  - Precedence: Lower than comparison operators
+- [ ] **HIGH PRIORITY**: Implement OR logical operator in expressions
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Add OR to tokenizer and precedence handling
+  - Usage: `A = 1 OR A = 2` (boolean result)
+  - Precedence: Lower than AND operator
+- [ ] **MEDIUM PRIORITY**: Implement NOT logical operator in expressions
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Add NOT as prefix operator
+  - Usage: `NOT A = 0` (boolean result)
+  - Precedence: Higher than comparison operators
+
+### Binary/Arithmetic Operators in Expressions (Not Yet Implemented)
+- [ ] **HIGH PRIORITY**: Implement MOD (modulus) operator in expressions
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Add MOD to tokenizer and precedence handling
+  - Usage: `A MOD B` (numeric result)
+  - Precedence: Same as multiplication/division
+- [ ] **MEDIUM PRIORITY**: Implement \ (integer division) operator in expressions
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Add \ to tokenizer and precedence handling
+  - Usage: `A \ B` (numeric result)
+  - Precedence: Same as multiplication/division
+- [ ] **LOWER PRIORITY**: Implement ^ (exponentiation) operator in expressions
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Add ^ to tokenizer and precedence handling
+  - Usage: `A ^ B` (numeric result)
+  - Precedence: Higher than multiplication/division
+
+### String Operations in Expressions (Not Yet Implemented)
+- [ ] **MEDIUM PRIORITY**: Implement string concatenation (+) operator
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Detect string operands and use concatenation instead of addition
+  - Usage: `A$ + B$` (string result)
+  - Precedence: Same as addition/subtraction
+- [ ] **LOWER PRIORITY**: Implement string comparison operators
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Detect string operands and use string comparison
+  - Usage: `A$ < B$` (lexicographic comparison)
+  - Precedence: Same as numeric comparison operators
+
+### Advanced Expression Features (Not Yet Implemented)
+- [ ] **MEDIUM PRIORITY**: Implement unary minus operator
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Handle negative numbers and expressions
+  - Usage: `-A`, `-(A + B)` (numeric result)
+  - Precedence: Higher than multiplication/division
+- [ ] **LOWER PRIORITY**: Implement ternary operator (IF-THEN-ELSE in expressions)
+  - Location: Expression evaluator (src/modules/bashic.expr.sh)
+  - Pattern: Complex parsing for conditional expressions
+  - Usage: `IF A > 0 THEN B ELSE C` (conditional result)
+  - Precedence: Lowest priority
+
+### Expression Parser Enhancements (Not Yet Implemented)
+- [ ] **MEDIUM PRIORITY**: Implement proper operator precedence for all operators
+  - Current: Only basic arithmetic precedence implemented
+  - Needed: Complete precedence table for all operators
+  - Precedence levels: ^ > * / MOD \ > + - > < > <= >= = <> > NOT > AND > OR
+- [ ] **MEDIUM PRIORITY**: Implement left-to-right associativity for operators
+  - Current: Basic associativity implemented
+  - Needed: Proper associativity for all operator types
+- [ ] **LOWER PRIORITY**: Implement complex nested expressions
+  - Current: Basic nesting with parentheses
+  - Needed: Support for deeply nested expressions
+- [ ] **LOWER PRIORITY**: Implement expression optimization
+  - Current: Direct evaluation
+  - Needed: Constant folding and optimization
 
 ## Variable Management
 - [x] Implement numeric variable storage

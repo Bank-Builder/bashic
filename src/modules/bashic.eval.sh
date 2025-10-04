@@ -17,42 +17,8 @@ evaluate_expression() {
     
     # Handle special functions (before string variables)
     if [[ "$expr" == "INKEY$" ]]; then
-        # Non-blocking keyboard input - return empty or character
-        local key=""
-        
-        if [[ -t 0 ]]; then
-            # Interactive mode - read directly from terminal
-            local IFS=
-            # Read a single character with timeout
-            if read -r -n1 -t 0.1 key </dev/tty; then
-                debug "INKEY$: read key '${key@Q}'"
-                echo "$key"
-            else
-                debug "INKEY$: no key available"
-                echo ""
-            fi
-            return
-        else
-            # Non-interactive mode - use pre-loaded buffer
-            debug "INKEY$: buffer length=${#INKEY_BUFFER}, first_char='${INKEY_BUFFER:0:1}'"
-            if [[ -n "$INKEY_BUFFER" ]]; then
-                key="${INKEY_BUFFER:0:1}"
-                INKEY_BUFFER="${INKEY_BUFFER:1}"
-                debug "INKEY$: returning key '${key@Q}'"
-                echo "$key"
-            else
-                debug "INKEY$: buffer empty"
-                echo ""
-            fi
-            return
-        fi
-        
-        # Convert to uppercase if BASHIC_UPPER_CASE is set
-        local upper_mode="${BASHIC_UPPER_CASE:-${NUMERIC_VARS[BASHIC_UPPER_CASE]:-0}}"
-        if [[ "$upper_mode" == "1" ]]; then
-            key="${key^^}"
-        fi
-        echo "$key"
+        # Use the kbd module's INKEY$ function
+        INKEY$
         return
     fi
     

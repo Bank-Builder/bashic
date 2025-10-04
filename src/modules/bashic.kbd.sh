@@ -60,12 +60,7 @@ get_key() {
 
 # INKEY$ function for BASIC compatibility
 INKEY$() {
-    local key=$(get_key)
-    if [ ${#key} -gt 0 ]; then
-        echo "$key"
-    else
-        echo ""
-    fi
+    echo $(get_key)
 }
 
 # Set up cleanup trap

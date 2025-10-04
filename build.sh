@@ -32,6 +32,10 @@ echo "# ===== MATH MODULE =====" >> "$BUILD_DIR/bashic"
 cat "$MODULES_DIR/bashic.math.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
+echo "# ===== KEYBOARD MODULE =====" >> "$BUILD_DIR/bashic"
+cat "$MODULES_DIR/bashic.kbd.sh" >> "$BUILD_DIR/bashic"
+
+echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== STRING MODULE =====" >> "$BUILD_DIR/bashic"
 cat "$MODULES_DIR/bashic.string.sh" >> "$BUILD_DIR/bashic"
 
