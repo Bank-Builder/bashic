@@ -34,7 +34,7 @@ get_key() {
         local char
         
         # Read a single character with timeout
-        read -r -n1 -t 0.1 char || true
+        read -r -n1 -t 4 char || true
         
         # Check for timeout (no input)
         if [ $? -gt 128 ] || [ -z "$char" ]; then
@@ -48,7 +48,7 @@ get_key() {
     else
         # Non-interactive mode - read from stdin
         local char
-        if read -r -n1 -t 0.1 char; then
+        if read -r -n1 -t 4 char; then
             echo "$char"
         else
             echo ""
