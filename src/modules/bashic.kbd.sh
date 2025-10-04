@@ -11,8 +11,8 @@ init_keyboard() {
     # Save current terminal settings and check if we're in a terminal
     if [ -t 0 ]; then
         BASHIC_TTY_SETTINGS=$(stty -g)
-        # Set terminal to raw mode
-        stty raw -echo
+        # Set terminal to raw mode with proper settings
+        stty raw -echo min 0 time 0
     else
         BASHIC_TTY_SETTINGS=""
     fi
@@ -51,13 +51,16 @@ get_key() {
         read -r -n1 -t 4 char
         local exit_code=$?
         
+        # Debug: show what we actually got
+        printf "DEBUG: char='%q' (length=%d) exit_code=%d\n" "$char" "${#char}" "$exit_code" >&2
+        
         # Check for timeout (no input) - but allow special characters
         if [ $exit_code -gt 128 ]; then
             echo ""
             return
         fi
         
-        echo "$char"
+        echo -n "$char"
         
         # Print the character (since echo is off) - but skip special keys
         # case "$char" in
