@@ -29,14 +29,14 @@ evaluate_expression() {
     fi
     
     # Handle string variables
-    if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*\$$ ]]; then
+    if [[ "$expr" =~ ^[A-Za-z][A-Za-z0-9_]*\$$ ]]; then
         local var_name="$expr"
         echo "${STRING_VARS[$var_name]:-}"
         return
     fi
     
     # Handle numeric variables (including integer variables with % suffix)
-    if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*%?$ ]]; then
+    if [[ "$expr" =~ ^[A-Za-z][A-Za-z0-9_]*%?$ ]]; then
         local var_name="$expr"
         echo "${NUMERIC_VARS[$var_name]:-0}"
         return
@@ -49,7 +49,7 @@ evaluate_expression() {
     fi
     
     # Handle function calls (check before array access)
-    local func_regex='^([A-Z]+\$?)\(([^)]*)\)$'
+    local func_regex='^([A-Za-z]+\$?)\(([^)]*)\)$'
     if [[ "$expr" =~ $func_regex ]]; then
         local func="${BASH_REMATCH[1]}"
         local arg="${BASH_REMATCH[2]}"
@@ -155,7 +155,7 @@ evaluate_expression() {
     fi
     
     # Handle array access (after function calls)
-    local array_regex='^([A-Z][A-Z0-9_]*)\(([^)]+)\)$'
+    local array_regex='^([A-Za-z][A-Za-z0-9_]*)\(([^)]+)\)$'
     if [[ "$expr" =~ $array_regex ]]; then
         local array_name="${BASH_REMATCH[1]}"
         local index_expr="${BASH_REMATCH[2]}"

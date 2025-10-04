@@ -78,7 +78,7 @@ parse_brackets_stack() {
             local after="${expr:$((end_pos + 1))}"
             
             # Check if this is a function call (before part ends with function name)
-            if [[ "$before" =~ ^([A-Z]+\$?)$ ]]; then
+            if [[ "$before" =~ ^([A-Za-z]+\$?)$ ]]; then
                 # This is a function call - don't process brackets, let evaluate_atom handle it
                 break
             else
@@ -112,7 +112,7 @@ process_expression_stack() {
     
     for token in "${tokens[@]}"; do
         echo "DEBUG: Processing token: '$token'" >&2
-        if [[ "$token" =~ ^[0-9A-Z_\$]+$ ]] || [[ "$token" =~ ^[A-Z]+\$?\(.*\)$ ]] || [[ "$token" =~ ^\".*\"$ ]]; then
+        if [[ "$token" =~ ^[0-9A-Za-z_\$]+$ ]] || [[ "$token" =~ ^[A-Za-z]+\$?\(.*\)$ ]] || [[ "$token" =~ ^\".*\"$ ]]; then
             # Operand (variable, number, function call, or string literal) - add to output
             echo "DEBUG: Adding operand to output: '$token'" >&2
             output_queue+=("$token")
@@ -150,7 +150,7 @@ process_expression_stack() {
     # Evaluate postfix expression
     local eval_stack=()
     for token in "${output_queue[@]}"; do
-        if [[ "$token" =~ ^[0-9A-Z_\$]+$ ]] || [[ "$token" =~ ^[A-Z]+\$?\(.*\)$ ]] || [[ "$token" =~ ^\".*\"$ ]]; then
+        if [[ "$token" =~ ^[0-9A-Za-z_\$]+$ ]] || [[ "$token" =~ ^[A-Za-z]+\$?\(.*\)$ ]] || [[ "$token" =~ ^\".*\"$ ]]; then
             # Operand (variable, number, function call, or string literal) - push to stack
             local value=$(evaluate_atom "$token")
             eval_stack+=("$value")
@@ -212,7 +212,7 @@ tokenize_expression() {
             fi
         elif [[ "$char" == "(" ]]; then
             # Left parenthesis - check if this is a function call
-            if [[ -n "$current_token" && "$current_token" =~ ^[A-Z]+\$?$ ]]; then
+            if [[ -n "$current_token" && "$current_token" =~ ^[A-Za-z]+\$?$ ]]; then
                 # This is a function call - keep the function name and parenthesis together
                 current_token="${current_token}("
             else
@@ -226,7 +226,7 @@ tokenize_expression() {
         elif [[ "$char" == "\"" ]]; then
             # String literal - handle complete string
             # If we're in a function call, add the string to the current token
-            if [[ "$current_token" =~ ^[A-Z]+\$?\( ]]; then
+            if [[ "$current_token" =~ ^[A-Za-z]+\$?\( ]]; then
                 # We're inside a function call - add the string literal to the current token
                 local string_content="\""
                 i=$((i + 1))
@@ -262,7 +262,7 @@ tokenize_expression() {
             fi
         elif [[ "$char" == ")" ]]; then
             # Right parenthesis - if we're in a function call, complete it
-            if [[ "$current_token" =~ ^[A-Z]+\$?\( ]]; then
+            if [[ "$current_token" =~ ^[A-Za-z]+\$?\( ]]; then
                 current_token="${current_token})"
                 tokens+=("$current_token")
                 current_token=""
@@ -322,7 +322,7 @@ evaluate_atom() {
     fi
     
     # Handle function calls (check before variables to avoid conflicts)
-    if [[ "$expr" =~ ^([A-Z]+\$?)\( ]]; then
+    if [[ "$expr" =~ ^([A-Za-z]+\$?)\( ]]; then
         local func="${BASH_REMATCH[1]}"
         # Extract argument by removing function name and parentheses
         local arg="${expr#${func}(}"
@@ -354,13 +354,13 @@ evaluate_atom() {
     fi
     
     # Handle string variables
-    if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*\$$ ]]; then
+    if [[ "$expr" =~ ^[A-Za-z][A-Za-z0-9_]*\$$ ]]; then
         echo "${STRING_VARS[$expr]:-}"
         return
     fi
     
     # Handle numeric variables
-    if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
+    if [[ "$expr" =~ ^[A-Za-z][A-Za-z0-9_]*$ ]]; then
         echo "${NUMERIC_VARS[$expr]:-0}"
         return
     fi
