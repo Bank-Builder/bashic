@@ -433,38 +433,62 @@ execute_print() {
     local output=""
     local no_newline=false
     
-    # Simple parsing - handle comma and semicolon separated values
-    # For single expressions, just evaluate directly
-    if [[ "$args" != *","* && "$args" != *";"* ]]; then
-        local value=$(evaluate_expression "$args")
-        echo -e "$value"
-        return
+    # Parentheses-aware parsing - handle comma and semicolon while respecting function calls
+    local expressions=()
+    local separators=()
+    local current_expr=""
+    local paren_count=0
+    local i=0
+    
+    # Parse character by character to respect parentheses
+    while [[ $i -lt ${#args} ]]; do
+        local char="${args:$i:1}"
+        
+        if [[ "$char" == "(" ]]; then
+            ((paren_count++))
+            current_expr+="$char"
+        elif [[ "$char" == ")" ]]; then
+            ((paren_count--))
+            current_expr+="$char"
+        elif [[ $paren_count -eq 0 && ("$char" == "," || "$char" == ";") ]]; then
+            # Found separator outside parentheses
+            expressions+=("$(trim "$current_expr")")
+            separators+=("$char")
+            current_expr=""
+        else
+            current_expr+="$char"
+        fi
+        ((i++))
+    done
+    
+    # Add final expression
+    if [[ -n "$current_expr" ]]; then
+        expressions+=("$(trim "$current_expr")")
     fi
     
-    # For multiple expressions, use simple regex (function calls with commas need assignment)
-    while [[ -n "$args" ]]; do
-        args=$(trim "$args")
+    # Process expressions
+    for ((i=0; i<${#expressions[@]}; i++)); do
+        local expr="${expressions[i]}"
+        local value=$(evaluate_expression "$expr")
         
-        if [[ "$args" =~ ^([^,;]+)([,;])(.*)$ ]]; then
-            local value="${BASH_REMATCH[1]}"
-            local sep="${BASH_REMATCH[2]}"
-            args="${BASH_REMATCH[3]}"
-            
-            value=$(evaluate_expression "$value")
-            
-            if [[ "$sep" == "," ]]; then
-                output="${output}${value}\t"
-            else
-                output="${output}${value}"
-                no_newline=true
+        output+="$value"
+        
+        # Add separator formatting
+        if [[ $i -lt ${#separators[@]} ]]; then
+            if [[ "${separators[i]}" == "," ]]; then
+                output+="\t"
             fi
-        else
-            # Last item
-            local value=$(evaluate_expression "$args")
-            output="${output}${value}"
-            break
+            # For semicolon, no separator is added (concatenation)
         fi
     done
+    
+    # Check if last separator was semicolon (no newline)
+    if [[ ${#separators[@]} -gt 0 ]]; then
+        local last_idx=$((${#separators[@]} - 1))
+        if [[ "${separators[last_idx]}" == ";" ]]; then
+            no_newline=true
+        fi
+    fi
     
     if [[ "$no_newline" == "true" ]]; then
         printf "%s" "$output"
