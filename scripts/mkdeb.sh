@@ -28,9 +28,14 @@ if [[ ! -f "$DEBIAN_DIR/DEBIAN/control" ]]; then
     exit 1
 fi
 
-# Ensure the executable is up to date
-echo "Copying latest bashic executable..."
-cp "$PROJECT_DIR/bashic" "$DEBIAN_DIR/usr/bin/bashic"
+# Build the modular bashic executable
+echo "Building modular bashic executable..."
+cd "$PROJECT_DIR"
+./build.sh
+
+# Copy the built executable
+echo "Copying built bashic executable..."
+cp "$PROJECT_DIR/build/bashic" "$DEBIAN_DIR/usr/bin/bashic"
 chmod +x "$DEBIAN_DIR/usr/bin/bashic"
 
 # Set proper permissions

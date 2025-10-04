@@ -6,6 +6,11 @@
 
 set -euo pipefail
 
+# ===== UTILITY MODULE =====
+#!/bin/bash
+# BASHIC Utility Functions Module
+# bashic.util.sh - Core utilities, constants, and global variables
+
 # Constants
 readonly MAX_ARRAY_SIZE=10000
 readonly BASIC_INDEX_BASE=1  # BASIC uses 1-based indexing
@@ -49,48 +54,12 @@ error() {
 
 # Usage information
 usage() {
-    echo "BASHIC - BASIC Interpreter v1.0"
-    echo "Usage: $0 [options] program.bas"
+    echo "Usage: $0 [options] <program.bas>"
     echo "Options:"
-    echo "  -h, --help     Show this help"
-    echo "  -v, --version  Show version"
-    echo "  -d, --debug    Enable debug mode"
-    echo ""
-    echo "Example: $0 examples/test1.bas"
-}
-
-version() {
-    echo "BASHIC 1.0 - BASIC Interpreter in Bash"
-}
-
-# Parse command line arguments
-parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -h|--help)
-                usage
-                exit 0
-                ;;
-            -v|--version)
-                version
-                exit 0
-                ;;
-            -d|--debug)
-                DEBUG=true
-                shift
-                ;;
-            -*)
-                error "Unknown option: $1"
-                ;;
-            *)
-                if [[ -n "${PROGRAM_FILE:-}" ]]; then
-                    error "Multiple program files specified"
-                fi
-                PROGRAM_FILE="$1"
-                shift
-                ;;
-        esac
-    done
+    echo "  -d, --debug    Enable debug output"
+    echo "  -h, --help     Show this help message"
+    echo "  -v, --version  Show version information"
+    exit 0
 }
 
 # Debug output
@@ -100,139 +69,12 @@ debug() {
     fi
 }
 
-# Pre-parse program to extract DIM statements and validate array bounds
-pre_parse_program() {
-    debug "Pre-parsing program for array declarations"
-    
-    local line_num
-    local line_content
-    
-    while read -r line_num; do
-        line_content="${PROGRAM_LINES[$line_num]}"
-        
-        # Check for DIM statements
-        if [[ "$line_content" =~ ^DIM[[:space:]]+(.*)$ ]]; then
-            local dim_stmt="${BASH_REMATCH[1]}"
-            dim_stmt=$(trim "$dim_stmt")
-            
-            if [[ "$dim_stmt" =~ ^([A-Z][A-Z0-9_]*\$?)\(([0-9]+)\)$ ]]; then
-                local var_name="${BASH_REMATCH[1]}"
-                local array_size="${BASH_REMATCH[2]}"
-                
-                # Validate array size
-                if [[ $array_size -lt 0 ]]; then
-                    error "Line $line_num: Array size cannot be negative: $var_name($array_size)"
-                fi
-                
-                if [[ $array_size -gt $MAX_ARRAY_SIZE ]]; then
-                    error "Line $line_num: Array size too large (max $MAX_ARRAY_SIZE): $var_name($array_size)"
-                fi
-                
-                # Store array metadata
-                if [[ "$var_name" =~ \$$ ]]; then
-                    ARRAYS["$var_name"]="string:$array_size"
-                else
-                    ARRAYS["$var_name"]="numeric:$array_size"
-                fi
-                
-                debug "Pre-parsed DIM $var_name($array_size)"
-            else
-                error "Line $line_num: Invalid DIM statement: $dim_stmt"
-            fi
-        fi
-    done < <(get_line_numbers)
-    
-    local array_count=0
-    if [[ -n "${ARRAYS:-}" ]]; then
-        array_count=${#ARRAYS[@]}
-    fi
-    debug "Pre-parsing completed: $array_count arrays declared"
-}
-
-# Load BASIC program from file
-load_program() {
-    local file="$1"
-    
-    if [[ ! -f "$file" ]]; then
-        error "Program file not found: $file"
-    fi
-    
-    debug "Loading program: $file"
-    
-    local line_num
-    local line_content
-    
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip empty lines and comments that don't start with line numbers
-        [[ -z "$line" ]] && continue
-        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-        
-        # Extract line number and content
-        if [[ "$line" =~ ^[[:space:]]*([0-9]+)[[:space:]]+(.*)$ ]]; then
-            line_num="${BASH_REMATCH[1]}"
-            line_content="${BASH_REMATCH[2]}"
-            PROGRAM_LINES[$line_num]="$line_content"
-            debug "Loaded line $line_num: $line_content"
-        else
-            # Lines without numbers are ignored in file mode
-            debug "Ignoring line without number: $line"
-        fi
-    done < "$file"
-    
-    if [[ ${#PROGRAM_LINES[@]} -eq 0 ]]; then
-        error "No valid program lines found in $file"
-    fi
-    
-    debug "Loaded ${#PROGRAM_LINES[@]} program lines"
-    
-    # Pre-parse program to extract DIM statements
-    pre_parse_program
-}
-
-# Global variable for sorted line numbers (cached)
-declare -a SORTED_LINE_NUMBERS
-
-# Get sorted line numbers (cached)
-get_line_numbers() {
-    if [[ -z "${SORTED_LINE_NUMBERS:-}" ]] || [[ ${#SORTED_LINE_NUMBERS[@]} -eq 0 ]]; then
-        readarray -t SORTED_LINE_NUMBERS < <(printf '%s\n' "${!PROGRAM_LINES[@]}" | sort -n)
-    fi
-    printf '%s\n' "${SORTED_LINE_NUMBERS[@]}"
-}
-
-# Find next line number after current (optimized with binary search)
-find_next_line() {
-    local current="$1"
-    local next=""
-    
-    # Ensure sorted line numbers are cached
-    get_line_numbers >/dev/null
-    
-    # Binary search for next line
-    local left=0
-    local right=$((${#SORTED_LINE_NUMBERS[@]} - 1))
-    
-    while [[ $left -le $right ]]; do
-        local mid=$(( (left + right) / 2 ))
-        local mid_line="${SORTED_LINE_NUMBERS[$mid]}"
-        
-        if [[ $mid_line -gt $current ]]; then
-            next="$mid_line"
-            right=$((mid - 1))
-        else
-            left=$((mid + 1))
-        fi
-    done
-    
-    echo "$next"
-}
-
-# Trim whitespace
+# Trim whitespace from string
 trim() {
-    local var="$1"
-    var="${var#"${var%%[![:space:]]*}"}"
-    var="${var%"${var##*[![:space:]]}"}"
-    echo "$var"
+    local str="$1"
+    str="${str#"${str%%[![:space:]]*}"}"  # Remove leading whitespace
+    str="${str%"${str##*[![:space:]]}"}"  # Remove trailing whitespace
+    echo "$str"
 }
 
 # Check if string is numeric
@@ -240,6 +82,64 @@ is_numeric() {
     local str="$1"
     [[ "$str" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]
 }
+
+# Generic stack push function
+stack_push() {
+    local stack_name="$1"
+    local value="$2"
+    
+    case "$stack_name" in
+        "GOSUB_STACK")
+            GOSUB_STACK+=("$value")
+            ;;
+        "FOR_STACK")
+            FOR_STACK+=("$value")
+            ;;
+        "WHILE_STACK")
+            WHILE_STACK+=("$value")
+            ;;
+        *)
+            error "Unknown stack: $stack_name"
+            ;;
+    esac
+}
+
+# Generic stack pop function
+stack_pop() {
+    local stack_name="$1"
+    local result=""
+    
+    case "$stack_name" in
+        "GOSUB_STACK")
+            if [[ ${#GOSUB_STACK[@]} -gt 0 ]]; then
+                result="${GOSUB_STACK[-1]}"
+                unset GOSUB_STACK[-1]
+            fi
+            ;;
+        "FOR_STACK")
+            if [[ ${#FOR_STACK[@]} -gt 0 ]]; then
+                result="${FOR_STACK[-1]}"
+                unset FOR_STACK[-1]
+            fi
+            ;;
+        "WHILE_STACK")
+            if [[ ${#WHILE_STACK[@]} -gt 0 ]]; then
+                result="${WHILE_STACK[-1]}"
+                unset WHILE_STACK[-1]
+            fi
+            ;;
+        *)
+            error "Unknown stack: $stack_name"
+            ;;
+    esac
+    
+    echo "$result"
+}
+
+# ===== MATH MODULE =====
+#!/bin/bash
+# BASHIC Math Functions Module
+# bashic.math.sh - Mathematical functions (ABS, INT, SGN, SQR)
 
 # Mathematical functions
 math_abs() {
@@ -283,6 +183,11 @@ math_sqr() {
         echo "$x"
     fi
 }
+
+# ===== STRING MODULE =====
+#!/bin/bash
+# BASHIC String Functions Module
+# bashic.string.sh - String functions (LEN, LEFT$, RIGHT$, MID$, ASC, CHR$, VAL, STR$)
 
 # String functions
 str_len() {
@@ -333,6 +238,11 @@ str_val() {
         echo "0"
     fi
 }
+
+# ===== EVAL MODULE =====
+#!/bin/bash
+# BASHIC Expression Evaluation Module
+# bashic.eval.sh - Expression evaluation, operators, and condition evaluation
 
 # Evaluate expression (optimized with single regex pattern)
 evaluate_expression() {
@@ -568,236 +478,7 @@ evaluate_expression() {
     echo "$expr"
 }
 
-# Execute PRINT statement
-execute_print() {
-    local args="$1"
-    
-    if [[ -z "$args" ]]; then
-        echo
-        return
-    fi
-    
-    # Split by comma or semicolon
-    local output=""
-    local no_newline=false
-    
-    # Simple parsing - handle comma and semicolon separated values
-    # For single expressions, just evaluate directly
-    if [[ "$args" != *","* && "$args" != *";"* ]]; then
-        local value=$(evaluate_expression "$args")
-        echo -e "$value"
-        return
-    fi
-    
-    # For multiple expressions, use parentheses-aware parsing
-    while [[ -n "$args" ]]; do
-        args=$(trim "$args")
-        
-        # Find the next comma or semicolon that's outside parentheses
-        local paren_count=0
-        local i=0
-        local sep_pos=-1
-        local sep_char=""
-        
-        while [[ $i -lt ${#args} ]]; do
-            local char="${args:$i:1}"
-            case "$char" in
-                "(") paren_count=$((paren_count + 1)) ;;
-                ")") paren_count=$((paren_count - 1)) ;;
-                ","|";")
-                    if [[ $paren_count -eq 0 ]]; then
-                        sep_pos=$i
-                        sep_char="$char"
-                        break
-                    fi
-                    ;;
-            esac
-            i=$((i + 1))
-        done
-        
-        if [[ $sep_pos -ge 0 ]]; then
-            # Found separator outside parentheses
-            local value="${args:0:$sep_pos}"
-            args="${args:$((sep_pos + 1))}"
-            
-            value=$(evaluate_expression "$value")
-            
-            if [[ "$sep_char" == "," ]]; then
-                output="${output}${value}\t"
-            else
-                output="${output}${value}"
-                no_newline=true
-            fi
-        else
-            # No separator found - last item
-            local value=$(evaluate_expression "$args")
-            output="${output}${value}"
-            break
-        fi
-    done
-    
-    if [[ "$no_newline" == "true" ]]; then
-        printf "%s" "$output"
-    else
-        echo -e "$output"
-    fi
-}
-
-# Execute LET statement
-execute_let() {
-    local stmt="$1"
-    stmt=$(trim "$stmt")
-    
-    # Handle array assignment: VARNAME(INDEX) = VALUE
-    local array_assign_regex='^([A-Z][A-Z0-9_]*)\(([^)]+)\)[[:space:]]*=[[:space:]]*(.*)$'
-    if [[ "$stmt" =~ $array_assign_regex ]]; then
-        local array_name="${BASH_REMATCH[1]}"
-        local index_expr="${BASH_REMATCH[2]}"
-        local value="${BASH_REMATCH[3]}"
-        
-        # Evaluate index and value
-        local index=$(evaluate_expression "$index_expr")
-        value=$(evaluate_expression "$value")
-        
-        # Check if array exists
-        if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
-            error "Array not declared: $array_name"
-        fi
-        
-        # Get array info
-        local array_info="${ARRAYS[$array_name]}"
-        local array_type="${array_info%:*}"
-        local array_size="${array_info#*:}"
-        
-        # Check bounds
-        if [[ $index -lt 0 || $index -gt $array_size ]]; then
-            error "Array index out of bounds: $array_name($index)"
-        fi
-        
-        # Store array element
-        local element_name="${array_name}_${index}"
-        if [[ "$array_type" == "string" ]]; then
-            STRING_VARS["$element_name"]="$value"
-        else
-            NUMERIC_VARS["$element_name"]="$value"
-        fi
-        
-        debug "Set $array_name($index) = $value"
-        
-    # Handle regular variable assignment: VARNAME = VALUE
-    elif [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*\$?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-        local var_name="${BASH_REMATCH[1]}"
-        local value="${BASH_REMATCH[2]}"
-        
-        value=$(evaluate_expression "$value")
-        
-        if [[ "$var_name" =~ \$$ ]]; then
-            STRING_VARS["$var_name"]="$value"
-        else
-            NUMERIC_VARS["$var_name"]="$value"
-        fi
-        
-        debug "Set $var_name = $value"
-    else
-        error "Invalid LET statement: $stmt"
-    fi
-}
-
-# Execute DIM statement (arrays already declared in pre-parsing)
-execute_dim() {
-    local stmt="$1"
-    stmt=$(trim "$stmt")
-    
-    # Arrays are already declared during pre-parsing
-    # This function exists for compatibility but does nothing
-    debug "DIM statement already processed during pre-parsing: $stmt"
-}
-
-# Execute FOR statement
-execute_for() {
-    local stmt="$1"
-    stmt=$(trim "$stmt")
-    
-    if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
-        local var_name="${BASH_REMATCH[1]}"
-        local start_val="${BASH_REMATCH[2]}"
-        local end_val="${BASH_REMATCH[3]}"
-        local step_val="${BASH_REMATCH[5]:-1}"
-        
-        start_val=$(evaluate_expression "$start_val")
-        end_val=$(evaluate_expression "$end_val")
-        step_val=$(evaluate_expression "$step_val")
-        
-        NUMERIC_VARS["$var_name"]="$start_val"
-        
-        # Push FOR loop info onto stack
-        stack_push FOR_STACK "$var_name:$end_val:$step_val:$CURRENT_LINE"
-        
-        debug "FOR $var_name = $start_val TO $end_val STEP $step_val"
-    else
-        error "Invalid FOR statement: $stmt"
-    fi
-}
-
-# Execute NEXT statement
-execute_next() {
-    local stmt="$1"
-    
-    if [[ ${#FOR_STACK[@]} -eq 0 ]]; then
-        error "NEXT without FOR"
-    fi
-    
-    local for_info="${FOR_STACK[-1]}"
-    local var_name="${for_info%%:*}"
-    local rest="${for_info#*:}"
-    local end_val="${rest%%:*}"
-    rest="${rest#*:}"
-    local step_val="${rest%%:*}"
-    local for_line="${rest#*:}"
-    
-    # Get current variable value and increment
-    local current_val="${NUMERIC_VARS[$var_name]}"
-    local new_val=$((current_val + step_val))
-    NUMERIC_VARS["$var_name"]="$new_val"
-    
-    # Check if loop should continue
-    local continue_loop=false
-    if [[ $step_val -gt 0 ]]; then
-        [[ $new_val -le $end_val ]] && continue_loop=true
-    else
-        [[ $new_val -ge $end_val ]] && continue_loop=true
-    fi
-    
-    if [[ "$continue_loop" == "true" ]]; then
-        CURRENT_LINE="$for_line"
-        debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $for_line"
-    else
-        # Pop FOR stack and continue
-        stack_pop FOR_STACK >/dev/null
-        debug "NEXT: End loop, $var_name = $new_val"
-    fi
-}
-
-# Generic stack management functions
-stack_push() {
-    local -n stack_ref="$1"
-    local value="$2"
-    stack_ref+=("$value")
-}
-
-stack_pop() {
-    local -n stack_ref="$1"
-    if [[ ${#stack_ref[@]} -eq 0 ]]; then
-        return 1
-    fi
-    local last_index=$((${#stack_ref[@]} - 1))
-    local value="${stack_ref[$last_index]}"
-    unset stack_ref[$last_index]
-    stack_ref=("${stack_ref[@]}")
-    echo "$value"
-}
-
-# Evaluate a single condition (shared helper for IF and WHILE)
+# Evaluate simple condition
 evaluate_condition() {
     local condition="$1"
     local result=false
@@ -913,7 +594,68 @@ evaluate_compound_condition() {
     evaluate_condition "$condition"
 }
 
-# Execute WHILE statement
+# ===== CONTROL MODULE =====
+execute_for() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
+        local var_name="${BASH_REMATCH[1]}"
+        local start_val="${BASH_REMATCH[2]}"
+        local end_val="${BASH_REMATCH[3]}"
+        local step_val="${BASH_REMATCH[5]:-1}"
+        
+        start_val=$(evaluate_expression "$start_val")
+        end_val=$(evaluate_expression "$end_val")
+        step_val=$(evaluate_expression "$step_val")
+        
+        NUMERIC_VARS["$var_name"]="$start_val"
+        
+        # Push FOR loop info onto stack
+        stack_push FOR_STACK "$var_name:$end_val:$step_val:$CURRENT_LINE"
+        
+        debug "FOR $var_name = $start_val TO $end_val STEP $step_val"
+    else
+        error "Invalid FOR statement: $stmt"
+    fi
+}
+execute_next() {
+    local stmt="$1"
+    
+    if [[ ${#FOR_STACK[@]} -eq 0 ]]; then
+        error "NEXT without FOR"
+    fi
+    
+    local for_info="${FOR_STACK[-1]}"
+    local var_name="${for_info%%:*}"
+    local rest="${for_info#*:}"
+    local end_val="${rest%%:*}"
+    rest="${rest#*:}"
+    local step_val="${rest%%:*}"
+    local for_line="${rest#*:}"
+    
+    # Get current variable value and increment
+    local current_val="${NUMERIC_VARS[$var_name]}"
+    local new_val=$((current_val + step_val))
+    NUMERIC_VARS["$var_name"]="$new_val"
+    
+    # Check if loop should continue
+    local continue_loop=false
+    if [[ $step_val -gt 0 ]]; then
+        [[ $new_val -le $end_val ]] && continue_loop=true
+    else
+        [[ $new_val -ge $end_val ]] && continue_loop=true
+    fi
+    
+    if [[ "$continue_loop" == "true" ]]; then
+        CURRENT_LINE="$for_line"
+        debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $for_line"
+    else
+        # Pop FOR stack and continue
+        stack_pop FOR_STACK >/dev/null
+        debug "NEXT: End loop, $var_name = $new_val"
+    fi
+}
 execute_while() {
     local stmt="$1"
     stmt=$(trim "$stmt")
@@ -924,8 +666,6 @@ execute_while() {
     
     debug "WHILE $stmt"
 }
-
-# Execute WEND statement  
 execute_wend() {
     local stmt="$1"
     
@@ -951,8 +691,6 @@ execute_wend() {
         debug "WEND: End loop"
     fi
 }
-
-# Execute IF statement
 execute_if() {
     local stmt="$1"
     stmt=$(trim "$stmt")
@@ -1000,8 +738,6 @@ execute_if() {
         error "Invalid IF statement: $stmt"
     fi
 }
-
-# Execute GOSUB statement
 execute_gosub() {
     local line_num="$1"
     
@@ -1016,8 +752,6 @@ execute_gosub() {
     CURRENT_LINE="$line_num"
     debug "GOSUB to line $line_num, return to $next_line"
 }
-
-# Execute RETURN statement
 execute_return() {
     local return_line=$(stack_pop GOSUB_STACK)
     if [[ $? -ne 0 ]]; then
@@ -1028,7 +762,146 @@ execute_return() {
     debug "RETURN to line $return_line"
 }
 
-# Execute statement
+# ===== STATEMENT MODULE =====
+execute_print() {
+    local args="$1"
+    
+    if [[ -z "$args" ]]; then
+        echo
+        return
+    fi
+    
+    # Split by comma or semicolon
+    local output=""
+    local no_newline=false
+    
+    # Simple parsing - handle comma and semicolon separated values
+    # For single expressions, just evaluate directly
+    if [[ "$args" != *","* && "$args" != *";"* ]]; then
+        local value=$(evaluate_expression "$args")
+        echo -e "$value"
+        return
+    fi
+    
+    # For multiple expressions, use parentheses-aware parsing
+    while [[ -n "$args" ]]; do
+        args=$(trim "$args")
+        
+        # Find the next comma or semicolon that's outside parentheses
+        local paren_count=0
+        local i=0
+        local sep_pos=-1
+        local sep_char=""
+        
+        while [[ $i -lt ${#args} ]]; do
+            local char="${args:$i:1}"
+            case "$char" in
+                "(") paren_count=$((paren_count + 1)) ;;
+                ")") paren_count=$((paren_count - 1)) ;;
+                ","|";")
+                    if [[ $paren_count -eq 0 ]]; then
+                        sep_pos=$i
+                        sep_char="$char"
+                        break
+                    fi
+                    ;;
+            esac
+            i=$((i + 1))
+        done
+        
+        if [[ $sep_pos -ge 0 ]]; then
+            # Found separator outside parentheses
+            local value="${args:0:$sep_pos}"
+            args="${args:$((sep_pos + 1))}"
+            
+            value=$(evaluate_expression "$value")
+            
+            if [[ "$sep_char" == "," ]]; then
+                output="${output}${value}\t"
+            else
+                output="${output}${value}"
+                no_newline=true
+            fi
+        else
+            # No separator found - last item
+            local value=$(evaluate_expression "$args")
+            output="${output}${value}"
+            break
+        fi
+    done
+    
+    if [[ "$no_newline" == "true" ]]; then
+        printf "%s" "$output"
+    else
+        echo -e "$output"
+    fi
+}
+execute_let() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    # Handle array assignment: VARNAME(INDEX) = VALUE
+    local array_assign_regex='^([A-Z][A-Z0-9_]*)\(([^)]+)\)[[:space:]]*=[[:space:]]*(.*)$'
+    if [[ "$stmt" =~ $array_assign_regex ]]; then
+        local array_name="${BASH_REMATCH[1]}"
+        local index_expr="${BASH_REMATCH[2]}"
+        local value="${BASH_REMATCH[3]}"
+        
+        # Evaluate index and value
+        local index=$(evaluate_expression "$index_expr")
+        value=$(evaluate_expression "$value")
+        
+        # Check if array exists
+        if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+            error "Array not declared: $array_name"
+        fi
+        
+        # Get array info
+        local array_info="${ARRAYS[$array_name]}"
+        local array_type="${array_info%:*}"
+        local array_size="${array_info#*:}"
+        
+        # Check bounds
+        if [[ $index -lt 0 || $index -gt $array_size ]]; then
+            error "Array index out of bounds: $array_name($index)"
+        fi
+        
+        # Store array element
+        local element_name="${array_name}_${index}"
+        if [[ "$array_type" == "string" ]]; then
+            STRING_VARS["$element_name"]="$value"
+        else
+            NUMERIC_VARS["$element_name"]="$value"
+        fi
+        
+        debug "Set $array_name($index) = $value"
+        
+    # Handle regular variable assignment: VARNAME = VALUE
+    elif [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*\$?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+        local var_name="${BASH_REMATCH[1]}"
+        local value="${BASH_REMATCH[2]}"
+        
+        value=$(evaluate_expression "$value")
+        
+        if [[ "$var_name" =~ \$$ ]]; then
+            STRING_VARS["$var_name"]="$value"
+        else
+            NUMERIC_VARS["$var_name"]="$value"
+        fi
+        
+        debug "Set $var_name = $value"
+    else
+        error "Invalid LET statement: $stmt"
+    fi
+}
+execute_dim() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    # Arrays are already declared during pre-parsing
+    # This function exists for compatibility but does nothing
+    debug "DIM statement already processed during pre-parsing: $stmt"
+}
 execute_statement() {
     local stmt="$1"
     stmt=$(trim "$stmt")
@@ -1107,11 +980,141 @@ execute_statement() {
     esac
 }
 
-# Run the program
+# ===== CORE MODULE =====
+#!/bin/bash
+# BASHIC Core Module
+# bashic.core.sh - Program management, execution loop, and main function
+
+# Load program from file
+load_program() {
+    local filename="$1"
+    
+    if [[ ! -f "$filename" ]]; then
+        error "File not found: $filename"
+    fi
+    
+    debug "Loading program: $filename"
+    
+    # Clear existing program
+    PROGRAM_LINES=()
+    NUMERIC_VARS=()
+    STRING_VARS=()
+    ARRAYS=()
+    GOSUB_STACK=()
+    FOR_STACK=()
+    WHILE_STACK=()
+    
+    # Read program lines
+    while IFS= read -r line; do
+        # Skip empty lines and comments
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*REM ]]; then
+            continue
+        fi
+        
+        # Extract line number and statement
+        if [[ "$line" =~ ^[[:space:]]*([0-9]+)[[:space:]]+(.*)$ ]]; then
+            local line_num="${BASH_REMATCH[1]}"
+            local statement="${BASH_REMATCH[2]}"
+            
+            # Validate line number
+            if [[ $line_num -gt $MAX_LINE_NUMBER ]]; then
+                error "Line number too large: $line_num"
+            fi
+            
+            PROGRAM_LINES[$line_num]="$statement"
+        fi
+    done < "$filename"
+    
+    if [[ ${#PROGRAM_LINES[@]} -eq 0 ]]; then
+        error "No valid program lines found"
+    fi
+    
+    # Pre-parse program for DIM statements
+    pre_parse_program
+    
+    debug "Program loaded: ${#PROGRAM_LINES[@]} lines"
+}
+
+# Pre-parse program to handle DIM statements
+pre_parse_program() {
+    debug "Pre-parsing program for DIM statements"
+    
+    for line_num in "${!PROGRAM_LINES[@]}"; do
+        local stmt="${PROGRAM_LINES[$line_num]}"
+        local upper_stmt=$(echo "$stmt" | tr '[:lower:]' '[:upper:]')
+        
+        if [[ "$upper_stmt" =~ ^DIM[[:space:]]+(.*)$ ]]; then
+            local args="${BASH_REMATCH[1]}"
+            args=$(trim "$args")
+            
+            # Parse DIM statement: DIM ARRAY(SIZE) or DIM ARRAY$(SIZE)
+            if [[ "$args" =~ ^([A-Z][A-Z0-9_]*)(\$?)\(([0-9]+)\)$ ]]; then
+                local array_name="${BASH_REMATCH[1]}"
+                local is_string="${BASH_REMATCH[2]}"
+                local size="${BASH_REMATCH[3]}"
+                
+                # Validate array size
+                if [[ $size -gt $MAX_ARRAY_SIZE ]]; then
+                    error "Array size too large: $array_name($size)"
+                fi
+                
+                # Store array metadata
+                local array_type="numeric"
+                [[ -n "$is_string" ]] && array_type="string"
+                ARRAYS[$array_name]="$array_type:$size"
+                
+                debug "DIM: $array_name($size) - $array_type"
+            else
+                error "Invalid DIM statement: $stmt"
+            fi
+        fi
+    done
+    
+    debug "Pre-parsing complete: ${#ARRAYS[@]} arrays declared"
+}
+
+# Get sorted line numbers
+get_line_numbers() {
+    if [[ -z "${SORTED_LINE_NUMBERS:-}" ]] || [[ ${#SORTED_LINE_NUMBERS[@]} -eq 0 ]]; then
+        readarray -t SORTED_LINE_NUMBERS < <(printf '%s\n' "${!PROGRAM_LINES[@]}" | sort -n)
+    fi
+    
+    printf '%s\n' "${SORTED_LINE_NUMBERS[@]}"
+}
+
+# Find next line number after current line
+find_next_line() {
+    local current="$1"
+    local line_numbers
+    readarray -t line_numbers < <(get_line_numbers)
+    
+    # Binary search for next line
+    local left=0
+    local right=${#line_numbers[@]}
+    
+    while [[ $left -lt $right ]]; do
+        local mid=$(( (left + right) / 2 ))
+        if [[ ${line_numbers[$mid]} -le $current ]]; then
+            left=$((mid + 1))
+        else
+            right=$mid
+        fi
+    done
+    
+    local next=""
+    if [[ $left -lt ${#line_numbers[@]} ]]; then
+        next="${line_numbers[$left]}"
+    fi
+    
+    echo "$next"
+}
+
+# Run program
 run_program() {
     debug "Starting program execution"
     
     RUNNING=true
+    CURRENT_LINE=0
     
     # Start with first line
     local line_numbers
@@ -1124,28 +1127,54 @@ run_program() {
     CURRENT_LINE="${line_numbers[0]}"
     
     while [[ "$RUNNING" == "true" ]]; do
-        if [[ -z "${PROGRAM_LINES[$CURRENT_LINE]:-}" ]]; then
-            debug "End of program reached"
-            break
-        fi
+        local stmt="${PROGRAM_LINES[$CURRENT_LINE]}"
+        debug "Executing line $CURRENT_LINE: $stmt"
         
-        local line_content="${PROGRAM_LINES[$CURRENT_LINE]}"
-        debug "Line $CURRENT_LINE: $line_content"
+        execute_statement "$stmt"
         
-        execute_statement "$line_content"
-        
-        # Move to next line if not redirected
         if [[ "$RUNNING" == "true" ]]; then
+            # Move to next line unless current line was changed by control flow
             local next_line=$(find_next_line "$CURRENT_LINE")
-            if [[ -z "$next_line" ]]; then
-                debug "No more lines to execute"
-                break
+            if [[ -n "$next_line" ]]; then
+                CURRENT_LINE="$next_line"
+            else
+                RUNNING=false
             fi
-            CURRENT_LINE="$next_line"
         fi
     done
     
     debug "Program execution completed"
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -d|--debug)
+                DEBUG=true
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            -v|--version)
+                echo "BASHIC Version 1.0"
+                exit 0
+                ;;
+            -*)
+                error "Unknown option: $1"
+                ;;
+            *)
+                if [[ -z "${PROGRAM_FILE:-}" ]]; then
+                    PROGRAM_FILE="$1"
+                else
+                    error "Multiple program files specified"
+                fi
+                shift
+                ;;
+        esac
+    done
 }
 
 # Main function
