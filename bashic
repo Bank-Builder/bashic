@@ -36,10 +36,10 @@ DATA_POINTER=0  # Current position in DATA_ITEMS
 
 # Error handling with context
 error_with_context() {
-    local message="$1"
+    local message="${1:-}"
     local context=""
     
-    if [[ $CURRENT_LINE -gt 0 ]]; then
+    if [[ ${CURRENT_LINE:-0} -gt 0 ]]; then
         context=" (line $CURRENT_LINE"
         if [[ -n "${PROGRAM_LINES[$CURRENT_LINE]:-}" ]]; then
             context="$context: ${PROGRAM_LINES[$CURRENT_LINE]}"
@@ -75,7 +75,7 @@ debug() {
 
 # Trim whitespace from string
 trim() {
-    local str="$1"
+    local str="${1:-}"
     str="${str#"${str%%[![:space:]]*}"}"  # Remove leading whitespace
     str="${str%"${str##*[![:space:]]}"}"  # Remove trailing whitespace
     echo "$str"
@@ -83,7 +83,7 @@ trim() {
 
 # Check if string is numeric
 is_numeric() {
-    local str="$1"
+    local str="${1:-}"
     [[ "$str" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]
 }
 
@@ -280,13 +280,13 @@ str_len() {
 }
 
 str_left() {
-    local str="$1"
+    local str="${1:-}"
     local len="$2"
     echo "${str:0:$len}"
 }
 
 str_right() {
-    local str="$1"
+    local str="${1:-}"
     local len="$2"
     local str_len="${#str}"
     local start=$((str_len - len))
@@ -295,7 +295,7 @@ str_right() {
 }
 
 str_mid() {
-    local str="$1"
+    local str="${1:-}"
     local start="$2"
     local len="${3:-${#str}}"
     start=$((start - BASIC_INDEX_BASE))  # BASIC uses 1-based indexing
@@ -304,7 +304,7 @@ str_mid() {
 }
 
 str_asc() {
-    local str="$1"
+    local str="${1:-}"
     [[ -z "$str" ]] && echo "0" && return
     printf "%d" "'${str:0:1}"
 }
@@ -315,7 +315,7 @@ str_chr() {
 }
 
 str_val() {
-    local str="$1"
+    local str="${1:-}"
     # Extract numeric part from beginning of string
     if [[ "$str" =~ ^[[:space:]]*(-?[0-9]+(\.[0-9]+)?) ]]; then
         echo "${BASH_REMATCH[1]}"
@@ -456,7 +456,7 @@ screen_width() {
 
 # Evaluate expression (optimized with single regex pattern)
 evaluate_expression() {
-    local expr="$1"
+    local expr="${1:-}"
     expr=$(trim "$expr")
     
     debug "Evaluating expression: $expr"
@@ -613,7 +613,17 @@ evaluate_expression() {
         local index_expr="${BASH_REMATCH[2]}"
         
         # Evaluate the index expression
-        local index=$(evaluate_expression "$index_expr")
+        # Handle 2D arrays with comma-separated indices
+        local index
+        if [[ "$index_expr" =~ ^([^,]+),([^,]+)$ ]]; then
+            # 2D array: evaluate both indices
+            local index1=$(evaluate_expression "${BASH_REMATCH[1]}")
+            local index2=$(evaluate_expression "${BASH_REMATCH[2]}")
+            index="${index1},${index2}"
+        else
+            # 1D array: evaluate single index
+            index=$(evaluate_expression "$index_expr")
+        fi
         
         # Check if array exists
         if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
@@ -626,8 +636,8 @@ evaluate_expression() {
         local array_size="${array_info#*:}"
         
         # Check bounds
-        if [[ $index -lt 0 || $index -gt $array_size ]]; then
-            error "Array index out of bounds: $array_name($index)"
+        if [[ ${index:-0} -lt 0 || ${index:-0} -gt ${array_size:-0} ]]; then
+            error "Array index out of bounds: $array_name(${index:-0})"
         fi
         
         # Return array element value
@@ -718,7 +728,7 @@ evaluate_expression() {
 
 # Evaluate simple condition
 evaluate_condition() {
-    local condition="$1"
+    local condition="${1:-}"
     local result=false
     
     if [[ "$condition" =~ ^([^<>=!]+)[[:space:]]*([<>=!]+)[[:space:]]*(.+)$ ]]; then
@@ -776,7 +786,7 @@ evaluate_condition() {
 
 # Evaluate compound condition with AND/OR/NOT operators
 evaluate_compound_condition() {
-    local condition="$1"
+    local condition="${1:-}"
     
     # Handle NOT operator (highest precedence)
     if [[ "$condition" =~ ^NOT[[:space:]]+(.+)$ ]]; then
@@ -834,7 +844,7 @@ evaluate_compound_condition() {
 
 # ===== CONTROL MODULE =====
 execute_for() {
-    local stmt="$1"
+    local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
     if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
@@ -847,6 +857,7 @@ execute_for() {
         end_val=$(evaluate_expression "$end_val")
         step_val=$(evaluate_expression "$step_val")
         
+        # Initialize the FOR loop variable immediately
         NUMERIC_VARS["$var_name"]="$start_val"
         
         # Push FOR loop info onto stack
@@ -854,12 +865,13 @@ execute_for() {
         stack_push FOR_STACK "$var_name:$end_val:$step_val:$CURRENT_LINE"
         
         debug "FOR $var_name = $start_val TO $end_val STEP $step_val at line $CURRENT_LINE"
+        debug "FOR variable $var_name initialized to $start_val"
     else
         error "Invalid FOR statement: $stmt"
     fi
 }
 execute_next() {
-    local stmt="$1"
+    local stmt="${1:-}"
     
     if [[ ${#FOR_STACK[@]} -eq 0 ]]; then
         error "NEXT without FOR"
@@ -904,7 +916,7 @@ execute_next() {
     fi
 }
 execute_while() {
-    local stmt="$1"
+    local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
     # Store the condition and current line for the loop
@@ -914,7 +926,7 @@ execute_while() {
     debug "WHILE $stmt"
 }
 execute_wend() {
-    local stmt="$1"
+    local stmt="${1:-}"
     
     if [[ ${#WHILE_STACK[@]} -eq 0 ]]; then
         error "WEND without WHILE"
@@ -945,7 +957,7 @@ execute_wend() {
     fi
 }
 execute_if() {
-    local stmt="$1"
+    local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
     if [[ "$stmt" =~ ^(.+)[[:space:]]+THEN[[:space:]]+(.*)$ ]]; then
@@ -1109,7 +1121,7 @@ execute_print() {
     fi
 }
 execute_let() {
-    local stmt="$1"
+    local stmt="${1:-}"
     stmt=$(trim "$stmt")
 
     debug "execute_let called with: $stmt"
@@ -1124,7 +1136,17 @@ execute_let() {
         debug "Array assignment matched: array_name=$array_name, index_expr=$index_expr, value=$value"
         
         # Evaluate index and value
-        local index=$(evaluate_expression "$index_expr")
+        # Handle 2D arrays with comma-separated indices
+        local index
+        if [[ "$index_expr" =~ ^([^,]+),([^,]+)$ ]]; then
+            # 2D array: evaluate both indices
+            local index1=$(evaluate_expression "${BASH_REMATCH[1]}")
+            local index2=$(evaluate_expression "${BASH_REMATCH[2]}")
+            index="${index1},${index2}"
+        else
+            # 1D array: evaluate single index
+            index=$(evaluate_expression "$index_expr")
+        fi
         value=$(evaluate_expression "$value")
         
         # Check if array exists
@@ -1138,8 +1160,8 @@ execute_let() {
         local array_size="${array_info#*:}"
         
         # Check bounds
-        if [[ $index -lt 0 || $index -gt $array_size ]]; then
-            error "Array index out of bounds: $array_name($index)"
+        if [[ ${index:-0} -lt 0 || ${index:-0} -gt ${array_size:-0} ]]; then
+            error "Array index out of bounds: $array_name(${index:-0})"
         fi
         
         # Store array element
@@ -1175,7 +1197,7 @@ execute_let() {
     fi
 }
 execute_dim() {
-    local stmt="$1"
+    local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
     # Arrays are already declared during pre-parsing
@@ -1183,7 +1205,7 @@ execute_dim() {
     debug "DIM statement already processed during pre-parsing: $stmt"
 }
 execute_input() {
-    local stmt="$1"
+    local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
     local prompt=""
@@ -1264,7 +1286,7 @@ execute_input() {
     debug "INPUT: Read values into variables"
 }
 execute_read() {
-    local stmt="$1"
+    local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
     # Parse variable list (comma-separated)
@@ -1274,7 +1296,7 @@ execute_read() {
         var_name=$(trim "$var_name")
         
         # Check if we have more data
-        if [[ $DATA_POINTER -ge ${#DATA_ITEMS[@]} ]]; then
+        if [[ ${DATA_POINTER:-0} -ge ${#DATA_ITEMS[@]} ]]; then
             error "READ: Out of DATA"
         fi
         
@@ -1296,7 +1318,7 @@ execute_restore() {
     debug "RESTORE: Data pointer reset to 0"
 }
 execute_randomize() {
-    local stmt="$1"
+    local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
     # RANDOMIZE optionally takes a seed value
@@ -1309,7 +1331,7 @@ execute_randomize() {
     fi
 }
 execute_statement() {
-    local stmt="$1"
+    local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
     debug "Executing: $stmt"
