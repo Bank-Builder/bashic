@@ -90,6 +90,8 @@ Create a BASIC interpreter using only bash that can execute .bas files with `./b
 - [x] Create test1.bas - simple functionality test
 - [x] Create test2.bas - advanced functionality test
 - [ ] **TESTING**: Verify all test programs run correctly
+  - test1.bas: WORKING - all arithmetic and basic functions work
+  - test2.bas: BLOCKED - requires DIM statement implementation
 - [ ] Create additional test programs for edge cases
 
 ## Debian Package
@@ -102,20 +104,22 @@ Create a BASIC interpreter using only bash that can execute .bas files with `./b
 
 ## Code Quality & Bug Fixes
 ### Critical Fixes Needed
-- [ ] **CRITICAL**: Fix arithmetic expression evaluation in PRINT statements
+- [x] **FIXED**: Fix arithmetic expression evaluation in PRINT statements
   - Issue: Regex pattern `^([A-Z0-9]+)\ *([+\-*/])\ *([A-Z0-9]+)$` not matching
   - Root cause: Character class `[+\-*/]` not properly escaped in bash regex
   - Solution: Replace with individual operator patterns: `(\+|\-|\*|/)`
   - Location: Line 280 in bashic script, evaluate_expression function
+  - Status: COMPLETED - arithmetic now works in PRINT statements
 - [ ] **CRITICAL**: Fix regex patterns for expression parsing
   - Multiple regex patterns using character classes need review
   - Test all regex patterns with actual input data
 - [ ] **CRITICAL**: Test and fix all mathematical functions
   - math_sgn() function has complex logic that may not work correctly
   - math_sqr() fallback Newton's method may have issues
-- [ ] **CRITICAL**: Inconsistent code between main bashic and debian/usr/bin/bashic files
+- [x] **FIXED**: Inconsistent code between main bashic and debian/usr/bin/bashic files
   - debian/usr/bin/bashic has different regex pattern (line 280)
   - Need to sync both files after fixes
+  - Status: COMPLETED - both files now synchronized
 
 ### Enhancements Needed
 - [ ] Improve error messages with line numbers
