@@ -18,6 +18,19 @@ init_keyboard() {
     fi
 }
 
+# Function to convert key to readable name
+key_name() {
+    local key="$1"
+    case "$key" in
+        $'\n') echo "ENTER" ;;
+        $'\e') echo "ESC" ;;
+        # ' ') echo "SPACE" ;;
+        $'\t') echo "TAB" ;;
+        $'\b') echo "BACKSPACE" ;;
+        *) echo "$key" ;;
+    esac
+}
+
 # Function to handle cleanup
 cleanup_keyboard() {
     # Restore terminal settings if we're in a terminal
@@ -28,13 +41,14 @@ cleanup_keyboard() {
 
 # Get a single character from keyboard or buffer
 get_key() {
+    local char
     if [ -t 0 ]; then
         # Interactive mode - read directly from terminal
-        local IFS=
-        local char
+        # local IFS=
+        # local char
         
         # Read a single character with timeout
-        read -r -n1 -t 4 char || true
+        read -r -n1 -t 4 char
         
         # Check for timeout (no input)
         if [ $? -gt 128 ] || [ -z "$char" ]; then
@@ -42,24 +56,26 @@ get_key() {
             return
         fi
         
-        # Print the character (since echo is off) - but skip special keys
-        case "$char" in
-            $'\n'|$'\r'|$'\e'|$'\t'|$'\b') 
-                # Don't echo special keys to avoid formatting issues
-                ;;
-            *) 
-                # Echo regular characters so user sees what they typed
-                echo -n "$char" > /dev/tty
-                ;;
-        esac
         echo "$char"
+        
+        # Print the character (since echo is off) - but skip special keys
+        # case "$char" in
+        #     $'\n'|$'\r'|$'\e'|$'\t'|$'\b') 
+        #         # Don't echo special keys to avoid formatting issues
+        #         ;;
+        #     *) 
+        #         # Echo regular characters so user sees what they typed
+        #         echo -n "$char" > /dev/tty
+        #         ;;
+        # esac
+        # echo "$char"
     else
         # Non-interactive mode - read from stdin
-        local char
+        # local char
         if read -r -n1 -t 4 char; then
-            echo "$char"
+            echo -n "$char"
         else
-            echo ""
+            echo -n ""
         fi
     fi
 }
