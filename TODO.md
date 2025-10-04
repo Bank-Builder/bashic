@@ -92,7 +92,8 @@ Create a BASIC interpreter using only bash that can execute .bas files with `./b
 - [ ] **TESTING**: Verify all test programs run correctly
   - test1.bas: WORKING - all arithmetic and basic functions work
   - test2.bas: BLOCKED - requires DIM statement implementation
-- [ ] Create additional test programs for edge cases
+- [x] Create additional test programs for edge cases
+  - Created math_test.bas for comprehensive mathematical function testing
 
 ## Debian Package
 - [x] Create debian/DEBIAN/control file
@@ -113,9 +114,10 @@ Create a BASIC interpreter using only bash that can execute .bas files with `./b
 - [ ] **CRITICAL**: Fix regex patterns for expression parsing
   - Multiple regex patterns using character classes need review
   - Test all regex patterns with actual input data
-- [ ] **CRITICAL**: Test and fix all mathematical functions
+- [x] **FIXED**: Test and fix all mathematical functions
   - math_sgn() function has complex logic that may not work correctly
   - math_sqr() fallback Newton's method may have issues
+  - Status: COMPLETED - SGN function rewritten and tested, all math functions working
 - [x] **FIXED**: Inconsistent code between main bashic and debian/usr/bin/bashic files
   - debian/usr/bin/bashic has different regex pattern (line 280)
   - Need to sync both files after fixes
