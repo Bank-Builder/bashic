@@ -2,6 +2,22 @@
 # BASHIC Expression Module
 # bashic.expr.sh - Expression evaluation using stack-based approach
 
+# Helper functions
+trim() {
+    local var="$1"
+    var="${var#"${var%%[![:space:]]*}"}"   # Remove leading whitespace
+    var="${var%"${var##*[![:space:]]}"}"   # Remove trailing whitespace
+    echo "$var"
+}
+
+debug() {
+    echo "DEBUG: $1" >&2
+}
+
+is_numeric() {
+    [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]]
+}
+
 # Evaluate expression with proper precedence
 evaluate_expression() {
     local expr="$1"
@@ -85,7 +101,8 @@ process_expression_stack() {
     local expr="$1"
     
     # Tokenize the expression
-    local tokens=($(tokenize_expression "$expr"))
+    local tokens
+    readarray -t tokens < <(tokenize_expression "$expr")
     
     # Convert to postfix notation using Shunting Yard algorithm
     local output_queue=()
