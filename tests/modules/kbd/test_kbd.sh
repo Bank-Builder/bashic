@@ -74,8 +74,17 @@ if [[ -t 0 ]]; then
     init_keyboard
     key=$(get_key)
     if [[ -n "$key" ]]; then
-        echo "Key detected: '$key'"
-        print_result "Interactive input (key: '$key')" 0
+        # Convert special characters to readable names
+        case "$key" in
+            $'\n'|$'\r') key_name="ENTER" ;;
+            $'\e') key_name="ESC" ;;
+            ' ') key_name="SPACE" ;;
+            $'\t') key_name="TAB" ;;
+            $'\b') key_name="BACKSPACE" ;;
+            *) key_name="$key" ;;
+        esac
+        echo "Key detected: '$key_name'"
+        print_result "Interactive input (key: '$key_name')" 0
     else
         print_result "Interactive input (timeout)" 0
     fi
