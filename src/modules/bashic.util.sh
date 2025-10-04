@@ -21,6 +21,7 @@ PROGRAM_COUNTER=0
 RUNNING=false
 DEBUG=false
 INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
+OLD_TTY_SETTINGS=""  # Store original terminal settings
 declare -a DATA_ITEMS  # DATA statement items
 DATA_POINTER=0  # Current position in DATA_ITEMS
 

@@ -77,6 +77,27 @@ screen_beep() {
     echo -ne "\a"
 }
 
+# Sound - play tone at frequency for duration
+screen_sound() {
+    local frequency="$1"
+    local duration_ms="$2"
+    
+    # Convert milliseconds to seconds for ffplay
+    local duration_sec=$(echo "scale=3; $duration_ms / 1000" | bc -l 2>/dev/null || echo "0.25")
+    
+    # Use ffplay to generate sine wave tone
+    # -nodisp: no display window
+    # -autoexit: exit when done
+    # -f lavfi: use lavfi (audio filter)
+    # -i sine: generate sine wave at specified frequency and duration
+    if command -v ffplay >/dev/null 2>&1; then
+        ffplay -nodisp -autoexit -f lavfi -i "sine=f=${frequency}:d=${duration_sec}" >/dev/null 2>&1 &
+    else
+        # Fallback to beep if ffplay not available
+        echo -ne "\a"
+    fi
+}
+
 # Set screen width (just store, don't actually resize)
 screen_width() {
     local width="$1"

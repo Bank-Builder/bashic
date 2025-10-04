@@ -12,18 +12,29 @@ load_program() {
     
     debug "Loading program: $filename"
     
-    # Pre-read all stdin for INKEY$ (if stdin is not a terminal)
-    if [[ ! -t 0 ]]; then
-        debug "stdin is not a terminal - buffering input for INKEY$"
-        # Read all available stdin into INKEY_BUFFER for non-interactive mode
-        if read -t 0 2>/dev/null; then
-            IFS= read -r -d '' INKEY_BUFFER || INKEY_BUFFER+=$'\n'
-            debug "INKEY_BUFFER filled with ${#INKEY_BUFFER} characters"
-        else
-            debug "No input available on stdin"
-        fi
+    # Set up terminal for INKEY$ handling
+    if [[ -t 0 ]]; then
+        debug "stdin is a terminal - setting up interactive mode"
+        # Save current terminal settings
+        OLD_TTY_SETTINGS=$(stty -g)
+        # Set terminal to raw mode
+        stty raw -echo
+        
+        # Function to handle cleanup
+        cleanup_terminal() {
+            if [[ -n "$OLD_TTY_SETTINGS" ]]; then
+                debug "Restoring terminal settings"
+                stty "$OLD_TTY_SETTINGS" </dev/tty 2>/dev/null || true
+            fi
+        }
+        
+        # Trap for cleanup on script exit
+        trap cleanup_terminal EXIT
     else
-        debug "stdin is a terminal - interactive mode"
+        debug "stdin is not a terminal - reading input for buffer"
+        # Read all input into buffer for non-interactive mode
+        INKEY_BUFFER=$(cat)
+        debug "INKEY_BUFFER filled with ${#INKEY_BUFFER} characters"
     fi
     
     # Clear existing program
@@ -333,6 +344,12 @@ run_program() {
     done
     
     debug "Program execution completed"
+    
+    # Restore terminal settings if we were in interactive mode
+    if [[ -t 0 && -n "${saved_stty:-}" ]]; then
+        debug "Restoring terminal settings"
+        stty "$saved_stty" 2>/dev/null || true
+    fi
 }
 
 # Parse command line arguments

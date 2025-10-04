@@ -229,12 +229,34 @@ Create a BASIC interpreter using only bash that can execute .bas files with `./b
 ## Immediate Next Steps (Priority Order)
 
 ### Phase 1: Critical Bug Fixes
-1. **Fix arithmetic expression regex** (Line 280 in bashic)
+1. **Fix INKEY$ implementation for interactive mode**
+   - Issue: INKEY$ only works in non-interactive mode (stdin not terminal)
+   - Location: bashic.core.sh and bashic.eval.sh
+   - Implementation Issues:
+     a. Terminal Mode:
+        - Raw/cbreak mode setup inconsistent
+        - Terminal state restoration unreliable
+        - Need to handle -icanon and -echo properly
+     b. Input Reading:
+        - Non-blocking read unreliable
+        - Timeout values need tuning
+        - Buffer management inconsistent
+     c. Testing:
+        - Need comprehensive test suite
+        - Edge cases not covered
+        - Debug output interferes with testing
+   - Required Changes:
+     1. Implement proper terminal mode setup
+     2. Use consistent input reading method
+     3. Improve buffer management
+     4. Add comprehensive tests
+     5. Fix debug output interference
+2. **Fix arithmetic expression regex** (Line 280 in bashic)
    - Replace `[+\-*/]` with `(\+|\-|\*|/)`
    - Test with "A + B", "A-B", "A*B", "A/B"
-2. **Sync debian/usr/bin/bashic** with main bashic file
-3. **Test mathematical functions** (ABS, INT, SGN, SQR)
-4. **Verify test1.bas and test2.bas run correctly**
+3. **Sync debian/usr/bin/bashic** with main bashic file
+4. **Test mathematical functions** (ABS, INT, SGN, SQR)
+5. **Verify test1.bas and test2.bas run correctly**
 
 ### Phase 2: Missing Core Features  
 1. **Implement WHILE/WEND loops**

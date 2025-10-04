@@ -10,6 +10,7 @@ BASHIC is a text-mode BASIC interpreter that runs .bas files using bash shell ca
 
 - `bash` (shell interpreter)
 - `bc` (basic calculator for mathematical functions)
+- `ffmpeg` (optional - for SOUND command audio playback)
 
 ## Usage
 
