@@ -447,6 +447,11 @@ evaluate_expression() {
                 str_val "$arg"
                 return
                 ;;
+            "STR$")
+                arg=$(evaluate_expression "$arg")
+                echo "$arg"
+                return
+                ;;
             *)
                 # Not a known function, might be an array - fall through to array handling
                 ;;
@@ -501,6 +506,44 @@ evaluate_expression() {
         return
     fi
     
+    # Handle string concatenation (+ operator) with proper quote handling
+    # Find the + operator that's outside quotes
+    local i=0
+    local in_quotes=false
+    local plus_pos=-1
+    
+    while [[ $i -lt ${#expr} ]]; do
+        local char="${expr:$i:1}"
+        if [[ "$char" == "\"" ]]; then
+            in_quotes=$((!in_quotes))
+        elif [[ "$char" == "+" && "$in_quotes" == "false" ]]; then
+            plus_pos=$i
+            break
+        fi
+        i=$((i + 1))
+    done
+    
+    if [[ $plus_pos -ge 0 ]]; then
+        # Found + operator outside quotes
+        local left="${expr:0:$plus_pos}"
+        local right="${expr:$((plus_pos + 1))}"
+        
+        left=$(trim "$left")
+        right=$(trim "$right")
+        
+        # Evaluate both sides
+        local left_val=$(evaluate_expression "$left")
+        local right_val=$(evaluate_expression "$right")
+        
+        # Check if this is string concatenation (not arithmetic)
+        if [[ ! "$left_val" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] || [[ ! "$right_val" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+            # String concatenation
+            echo "${left_val}${right_val}"
+            return
+        fi
+        # If both are numeric, fall through to arithmetic handling
+    fi
+    
     # Handle simple arithmetic (symbol-based operators)
     if [[ "$expr" =~ ^([A-Z0-9_]+)\ *(\+|\-|\*|/)\ *([A-Z0-9_]+)$ ]]; then
         local left="${BASH_REMATCH[1]}"
@@ -546,25 +589,47 @@ execute_print() {
         return
     fi
     
-    # For multiple expressions, use simple regex (function calls with commas need assignment)
+    # For multiple expressions, use parentheses-aware parsing
     while [[ -n "$args" ]]; do
         args=$(trim "$args")
         
-        if [[ "$args" =~ ^([^,;]+)([,;])(.*)$ ]]; then
-            local value="${BASH_REMATCH[1]}"
-            local sep="${BASH_REMATCH[2]}"
-            args="${BASH_REMATCH[3]}"
+        # Find the next comma or semicolon that's outside parentheses
+        local paren_count=0
+        local i=0
+        local sep_pos=-1
+        local sep_char=""
+        
+        while [[ $i -lt ${#args} ]]; do
+            local char="${args:$i:1}"
+            case "$char" in
+                "(") paren_count=$((paren_count + 1)) ;;
+                ")") paren_count=$((paren_count - 1)) ;;
+                ","|";")
+                    if [[ $paren_count -eq 0 ]]; then
+                        sep_pos=$i
+                        sep_char="$char"
+                        break
+                    fi
+                    ;;
+            esac
+            i=$((i + 1))
+        done
+        
+        if [[ $sep_pos -ge 0 ]]; then
+            # Found separator outside parentheses
+            local value="${args:0:$sep_pos}"
+            args="${args:$((sep_pos + 1))}"
             
             value=$(evaluate_expression "$value")
             
-            if [[ "$sep" == "," ]]; then
+            if [[ "$sep_char" == "," ]]; then
                 output="${output}${value}\t"
             else
                 output="${output}${value}"
                 no_newline=true
             fi
         else
-            # Last item
+            # No separator found - last item
             local value=$(evaluate_expression "$args")
             output="${output}${value}"
             break
