@@ -813,10 +813,42 @@ evaluate_condition() {
         case "$op" in
             "=")  [[ "$left" == "$right" ]] && result=true ;;
             "<>") [[ "$left" != "$right" ]] && result=true ;;
-            "<")  [[ $left -lt $right ]] && result=true ;;
-            ">")  [[ $left -gt $right ]] && result=true ;;
-            "<=") [[ $left -le $right ]] && result=true ;;
-            ">=") [[ $left -ge $right ]] && result=true ;;
+            "<")  
+                # Check if both are numeric
+                if [[ "$left" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] && [[ "$right" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+                    [[ $left -lt $right ]] && result=true
+                else
+                    # String comparison (lexicographic)
+                    [[ "$left" < "$right" ]] && result=true
+                fi
+                ;;
+            ">")  
+                # Check if both are numeric
+                if [[ "$left" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] && [[ "$right" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+                    [[ $left -gt $right ]] && result=true
+                else
+                    # String comparison (lexicographic)
+                    [[ "$left" > "$right" ]] && result=true
+                fi
+                ;;
+            "<=") 
+                # Check if both are numeric
+                if [[ "$left" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] && [[ "$right" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+                    [[ $left -le $right ]] && result=true
+                else
+                    # String comparison (lexicographic)
+                    [[ "$left" < "$right" ]] || [[ "$left" == "$right" ]] && result=true
+                fi
+                ;;
+            ">=") 
+                # Check if both are numeric
+                if [[ "$left" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] && [[ "$right" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+                    [[ $left -ge $right ]] && result=true
+                else
+                    # String comparison (lexicographic)
+                    [[ "$left" > "$right" ]] || [[ "$left" == "$right" ]] && result=true
+                fi
+                ;;
         esac
     fi
     
