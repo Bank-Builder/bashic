@@ -147,7 +147,7 @@ stack_pop() {
 
 # Mathematical functions
 math_abs() {
-    local n="$1"
+    local n="${1:-0}"
     if [[ $(echo "$n < 0" | bc -l 2>/dev/null || echo "0") == "1" ]]; then
         echo "$n * -1" | bc -l 2>/dev/null || echo "${n#-}"
     else
@@ -156,12 +156,12 @@ math_abs() {
 }
 
 math_int() {
-    local n="$1"
+    local n="${1:-0}"
     echo "$n" | cut -d. -f1
 }
 
 math_sgn() {
-    local n="$1"
+    local n="${1:-0}"
     if [[ "$n" =~ ^-.*$ ]]; then
         echo "-1"
     elif [[ "$n" == "0" || "$n" == "0.0" ]]; then
@@ -172,7 +172,7 @@ math_sgn() {
 }
 
 math_sqr() {
-    local n="$1"
+    local n="${1:-0}"
     # Simple square root using bash arithmetic (limited precision)
     if command -v bc >/dev/null 2>&1; then
         echo "sqrt($n)" | bc -l
@@ -189,7 +189,7 @@ math_sqr() {
 }
 
 math_rnd() {
-    local n="$1"
+    local n="${1:-1}"
     # Random number between 0 and 1
     # Use RANDOM (0-32767) and scale to 0-1
     local result=$(echo "scale=6; $RANDOM / 32767" | bc -l 2>/dev/null || echo "0.$RANDOM")
