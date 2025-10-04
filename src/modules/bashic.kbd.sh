@@ -53,15 +53,8 @@ get_key() {
         fi
     else
         # Non-interactive mode - read from stdin
-        if read -r -t 4 line; then
-            if [ -z "$line" ]; then
-                # Empty line means newline character
-                char=$'\n'
-                printf "%s" "$char"
-            else
-                char="${line:0:1}"
-                echo -n "$char"
-            fi
+        if read -r -n1 -t 4 char; then
+            echo -n "$char"
         else
             echo ""
         fi
