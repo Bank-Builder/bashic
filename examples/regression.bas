@@ -14,11 +14,12 @@
 140 IF A - B <> 5 THEN GOTO 9000
 150 IF A * B <> 50 THEN GOTO 9000
 160 IF A / B <> 2 THEN GOTO 9000
-170 PRINT "  PASS: Basic arithmetic operations"
-180 REM
-190 REM TEST 2: String Variables
-200 REM
-210 PRINT "TEST 2: String Variables"
+170 IF A MOD 3 <> 1 THEN GOTO 9000
+180 PRINT "  PASS: Basic arithmetic operations (including MOD)"
+190 REM
+200 REM TEST 2: String Variables
+210 REM
+220 PRINT "TEST 2: String Variables"
 220 LET S$ = "Hello"
 230 LET T$ = "World"
 240 PRINT "  PASS: String assignment and storage"
