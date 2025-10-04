@@ -1,0 +1,693 @@
+#!/bin/bash
+
+# BASHIC - BASIC Interpreter in Bash
+# Version 1.0
+# A complete BASIC interpreter written entirely in bash
+
+set -euo pipefail
+
+# Global variables
+declare -A PROGRAM_LINES      # Program lines indexed by line number
+declare -A NUMERIC_VARS       # Numeric variables
+declare -A STRING_VARS        # String variables  
+declare -A ARRAYS            # Arrays
+declare -a GOSUB_STACK       # GOSUB return stack
+declare -a FOR_STACK         # FOR loop stack
+declare -a WHILE_STACK       # WHILE loop stack
+
+CURRENT_LINE=0
+PROGRAM_COUNTER=0
+RUNNING=false
+DEBUG=false
+
+# Error handling
+error() {
+    echo "ERROR: $1" >&2
+    exit 1
+}
+
+# Usage information
+usage() {
+    echo "BASHIC - BASIC Interpreter v1.0"
+    echo "Usage: $0 [options] program.bas"
+    echo "Options:"
+    echo "  -h, --help     Show this help"
+    echo "  -v, --version  Show version"
+    echo "  -d, --debug    Enable debug mode"
+    echo ""
+    echo "Example: $0 examples/test1.bas"
+}
+
+version() {
+    echo "BASHIC 1.0 - BASIC Interpreter in Bash"
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            -v|--version)
+                version
+                exit 0
+                ;;
+            -d|--debug)
+                DEBUG=true
+                shift
+                ;;
+            -*)
+                error "Unknown option: $1"
+                ;;
+            *)
+                if [[ -n "${PROGRAM_FILE:-}" ]]; then
+                    error "Multiple program files specified"
+                fi
+                PROGRAM_FILE="$1"
+                shift
+                ;;
+        esac
+    done
+}
+
+# Debug output
+debug() {
+    if [[ "$DEBUG" == "true" ]]; then
+        echo "DEBUG: $1" >&2
+    fi
+}
+
+# Load BASIC program from file
+load_program() {
+    local file="$1"
+    
+    if [[ ! -f "$file" ]]; then
+        error "Program file not found: $file"
+    fi
+    
+    debug "Loading program: $file"
+    
+    local line_num
+    local line_content
+    
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip empty lines and comments that don't start with line numbers
+        [[ -z "$line" ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        
+        # Extract line number and content
+        if [[ "$line" =~ ^[[:space:]]*([0-9]+)[[:space:]]+(.*)$ ]]; then
+            line_num="${BASH_REMATCH[1]}"
+            line_content="${BASH_REMATCH[2]}"
+            PROGRAM_LINES[$line_num]="$line_content"
+            debug "Loaded line $line_num: $line_content"
+        else
+            # Lines without numbers are ignored in file mode
+            debug "Ignoring line without number: $line"
+        fi
+    done < "$file"
+    
+    if [[ ${#PROGRAM_LINES[@]} -eq 0 ]]; then
+        error "No valid program lines found in $file"
+    fi
+    
+    debug "Loaded ${#PROGRAM_LINES[@]} program lines"
+}
+
+# Get sorted line numbers
+get_line_numbers() {
+    printf '%s\n' "${!PROGRAM_LINES[@]}" | sort -n
+}
+
+# Find next line number after current
+find_next_line() {
+    local current="$1"
+    local next=""
+    
+    while read -r line_num; do
+        if [[ $line_num -gt $current ]]; then
+            next="$line_num"
+            break
+        fi
+    done < <(get_line_numbers)
+    
+    echo "$next"
+}
+
+# Trim whitespace
+trim() {
+    local var="$1"
+    var="${var#"${var%%[![:space:]]*}"}"
+    var="${var%"${var##*[![:space:]]}"}"
+    echo "$var"
+}
+
+# Check if string is numeric
+is_numeric() {
+    local str="$1"
+    [[ "$str" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]
+}
+
+# Mathematical functions
+math_abs() {
+    local n="$1"
+    if [[ $(echo "$n < 0" | bc -l 2>/dev/null || echo "0") == "1" ]]; then
+        echo "$n * -1" | bc -l 2>/dev/null || echo "${n#-}"
+    else
+        echo "$n"
+    fi
+}
+
+math_int() {
+    local n="$1"
+    echo "$n" | cut -d. -f1
+}
+
+math_sgn() {
+    local n="$1"
+    if [[ $(echo "$n > 0" | bc -l 2>/dev/null || [[ "${n#-}" != "$n" ]] && echo "0" || echo "1") == "1" ]]; then
+        echo "1"
+    elif [[ $(echo "$n < 0" | bc -l 2>/dev/null || [[ "${n#-}" != "$n" ]] && echo "1" || echo "0") == "1" ]]; then
+        echo "-1"
+    else
+        echo "0"
+    fi
+}
+
+math_sqr() {
+    local n="$1"
+    # Simple square root using bash arithmetic (limited precision)
+    if command -v bc >/dev/null 2>&1; then
+        echo "sqrt($n)" | bc -l
+    else
+        # Fallback: Newton's method approximation
+        local x="$n"
+        local prev=0
+        while [[ "$x" != "$prev" ]]; do
+            prev="$x"
+            x=$(( (x + n/x) / 2 ))
+        done
+        echo "$x"
+    fi
+}
+
+# String functions
+str_len() {
+    echo "${#1}"
+}
+
+str_left() {
+    local str="$1"
+    local len="$2"
+    echo "${str:0:$len}"
+}
+
+str_right() {
+    local str="$1"
+    local len="$2"
+    local str_len="${#str}"
+    local start=$((str_len - len))
+    [[ $start -lt 0 ]] && start=0
+    echo "${str:$start}"
+}
+
+str_mid() {
+    local str="$1"
+    local start="$2"
+    local len="${3:-${#str}}"
+    start=$((start - 1))  # BASIC uses 1-based indexing
+    [[ $start -lt 0 ]] && start=0
+    echo "${str:$start:$len}"
+}
+
+str_asc() {
+    local str="$1"
+    [[ -z "$str" ]] && echo "0" && return
+    printf "%d" "'${str:0:1}"
+}
+
+str_chr() {
+    local code="$1"
+    printf "\\$(printf "%03o" "$code")"
+}
+
+str_val() {
+    local str="$1"
+    # Extract numeric part from beginning of string
+    if [[ "$str" =~ ^[[:space:]]*(-?[0-9]+(\.[0-9]+)?) ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo "0"
+    fi
+}
+
+# Evaluate expression (simplified)
+evaluate_expression() {
+    local expr="$1"
+    expr=$(trim "$expr")
+    
+    debug "Evaluating expression: $expr"
+    
+    # Handle string literals
+    if [[ "$expr" =~ ^\"(.*)\"$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return
+    fi
+    
+    # Handle string variables
+    if [[ "$expr" =~ ^[A-Z][A-Z0-9]*\$$ ]]; then
+        local var_name="$expr"
+        echo "${STRING_VARS[$var_name]:-}"
+        return
+    fi
+    
+    # Handle numeric variables
+    if [[ "$expr" =~ ^[A-Z][A-Z0-9]*$ ]]; then
+        local var_name="$expr"
+        echo "${NUMERIC_VARS[$var_name]:-0}"
+        return
+    fi
+    
+    # Handle numeric literals
+    if is_numeric "$expr"; then
+        echo "$expr"
+        return
+    fi
+    
+    # Handle simple arithmetic (very basic)
+    if [[ "$expr" =~ ^([^+\-*/]+)([+\-*/])([^+\-*/]+)$ ]]; then
+        local left="${BASH_REMATCH[1]}"
+        local op="${BASH_REMATCH[2]}"
+        local right="${BASH_REMATCH[3]}"
+        
+        left=$(evaluate_expression "$left")
+        right=$(evaluate_expression "$right")
+        
+        case "$op" in
+            "+") echo "$((left + right))" ;;
+            "-") echo "$((left - right))" ;;
+            "*") echo "$((left * right))" ;;
+            "/") echo "$((left / right))" ;;
+        esac
+        return
+    fi
+    
+    # Handle function calls
+    if [[ "$expr" =~ ^([A-Z]+)\(([^)]*)\)$ ]]; then
+        local func="${BASH_REMATCH[1]}"
+        local arg="${BASH_REMATCH[2]}"
+        
+        case "$func" in
+            "ABS")
+                arg=$(evaluate_expression "$arg")
+                math_abs "$arg"
+                ;;
+            "INT")
+                arg=$(evaluate_expression "$arg")
+                math_int "$arg"
+                ;;
+            "SGN")
+                arg=$(evaluate_expression "$arg")
+                math_sgn "$arg"
+                ;;
+            "SQR")
+                arg=$(evaluate_expression "$arg")
+                math_sqr "$arg"
+                ;;
+            "LEN")
+                arg=$(evaluate_expression "$arg")
+                str_len "$arg"
+                ;;
+            "LEFT$")
+                if [[ "$arg" =~ ^([^,]+),([^,]+)$ ]]; then
+                    local str_arg="${BASH_REMATCH[1]}"
+                    local len_arg="${BASH_REMATCH[2]}"
+                    str_arg=$(evaluate_expression "$str_arg")
+                    len_arg=$(evaluate_expression "$len_arg")
+                    str_left "$str_arg" "$len_arg"
+                fi
+                ;;
+            "RIGHT$")
+                if [[ "$arg" =~ ^([^,]+),([^,]+)$ ]]; then
+                    local str_arg="${BASH_REMATCH[1]}"
+                    local len_arg="${BASH_REMATCH[2]}"
+                    str_arg=$(evaluate_expression "$str_arg")
+                    len_arg=$(evaluate_expression "$len_arg")
+                    str_right "$str_arg" "$len_arg"
+                fi
+                ;;
+            "MID$")
+                if [[ "$arg" =~ ^([^,]+),([^,]+),([^,]+)$ ]]; then
+                    local str_arg="${BASH_REMATCH[1]}"
+                    local start_arg="${BASH_REMATCH[2]}"
+                    local len_arg="${BASH_REMATCH[3]}"
+                    str_arg=$(evaluate_expression "$str_arg")
+                    start_arg=$(evaluate_expression "$start_arg")
+                    len_arg=$(evaluate_expression "$len_arg")
+                    str_mid "$str_arg" "$start_arg" "$len_arg"
+                fi
+                ;;
+            *)
+                error "Unknown function: $func"
+                ;;
+        esac
+        return
+    fi
+    
+    # Default: return as-is
+    echo "$expr"
+}
+
+# Execute PRINT statement
+execute_print() {
+    local args="$1"
+    
+    if [[ -z "$args" ]]; then
+        echo
+        return
+    fi
+    
+    # Split by comma or semicolon
+    local output=""
+    local no_newline=false
+    
+    # Simple parsing - handle comma and semicolon separated values
+    while [[ -n "$args" ]]; do
+        args=$(trim "$args")
+        
+        if [[ "$args" =~ ^([^,;]+)([,;])(.*)$ ]]; then
+            local value="${BASH_REMATCH[1]}"
+            local sep="${BASH_REMATCH[2]}"
+            args="${BASH_REMATCH[3]}"
+            
+            value=$(evaluate_expression "$value")
+            
+            if [[ "$sep" == "," ]]; then
+                output="${output}${value}\t"
+            else
+                output="${output}${value}"
+                no_newline=true
+            fi
+        else
+            # Last item
+            local value=$(evaluate_expression "$args")
+            output="${output}${value}"
+            break
+        fi
+    done
+    
+    if [[ "$no_newline" == "true" ]]; then
+        printf "%s" "$output"
+    else
+        echo -e "$output"
+    fi
+}
+
+# Execute LET statement
+execute_let() {
+    local stmt="$1"
+    
+    if [[ "$stmt" =~ ^([A-Z][A-Z0-9]*\$?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+        local var_name="${BASH_REMATCH[1]}"
+        local value="${BASH_REMATCH[2]}"
+        
+        value=$(evaluate_expression "$value")
+        
+        if [[ "$var_name" =~ \$$ ]]; then
+            STRING_VARS["$var_name"]="$value"
+        else
+            NUMERIC_VARS["$var_name"]="$value"
+        fi
+        
+        debug "Set $var_name = $value"
+    else
+        error "Invalid LET statement: $stmt"
+    fi
+}
+
+# Execute FOR statement
+execute_for() {
+    local stmt="$1"
+    
+    if [[ "$stmt" =~ ^([A-Z][A-Z0-9]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
+        local var_name="${BASH_REMATCH[1]}"
+        local start_val="${BASH_REMATCH[2]}"
+        local end_val="${BASH_REMATCH[3]}"
+        local step_val="${BASH_REMATCH[5]:-1}"
+        
+        start_val=$(evaluate_expression "$start_val")
+        end_val=$(evaluate_expression "$end_val")
+        step_val=$(evaluate_expression "$step_val")
+        
+        NUMERIC_VARS["$var_name"]="$start_val"
+        
+        # Push FOR loop info onto stack
+        FOR_STACK+=("$var_name:$end_val:$step_val:$CURRENT_LINE")
+        
+        debug "FOR $var_name = $start_val TO $end_val STEP $step_val"
+    else
+        error "Invalid FOR statement: $stmt"
+    fi
+}
+
+# Execute NEXT statement
+execute_next() {
+    local stmt="$1"
+    
+    if [[ ${#FOR_STACK[@]} -eq 0 ]]; then
+        error "NEXT without FOR"
+    fi
+    
+    local for_info="${FOR_STACK[-1]}"
+    local var_name="${for_info%%:*}"
+    local rest="${for_info#*:}"
+    local end_val="${rest%%:*}"
+    rest="${rest#*:}"
+    local step_val="${rest%%:*}"
+    local for_line="${rest#*:}"
+    
+    # Get current variable value and increment
+    local current_val="${NUMERIC_VARS[$var_name]}"
+    local new_val=$((current_val + step_val))
+    NUMERIC_VARS["$var_name"]="$new_val"
+    
+    # Check if loop should continue
+    local continue_loop=false
+    if [[ $step_val -gt 0 ]]; then
+        [[ $new_val -le $end_val ]] && continue_loop=true
+    else
+        [[ $new_val -ge $end_val ]] && continue_loop=true
+    fi
+    
+    if [[ "$continue_loop" == "true" ]]; then
+        CURRENT_LINE="$for_line"
+        debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $for_line"
+    else
+        # Pop FOR stack and continue
+        unset FOR_STACK[-1]
+        FOR_STACK=("${FOR_STACK[@]}")
+        debug "NEXT: End loop, $var_name = $new_val"
+    fi
+}
+
+# Execute IF statement
+execute_if() {
+    local stmt="$1"
+    
+    if [[ "$stmt" =~ ^(.+)[[:space:]]+THEN[[:space:]]+(.*)$ ]]; then
+        local condition="${BASH_REMATCH[1]}"
+        local then_part="${BASH_REMATCH[2]}"
+        
+        # Simple condition evaluation (A > B, A = B, etc.)
+        local result=false
+        
+        if [[ "$condition" =~ ^([^<>=!]+)[[:space:]]*([<>=!]+)[[:space:]]*(.+)$ ]]; then
+            local left="${BASH_REMATCH[1]}"
+            local op="${BASH_REMATCH[2]}"
+            local right="${BASH_REMATCH[3]}"
+            
+            left=$(evaluate_expression "$left")
+            right=$(evaluate_expression "$right")
+            
+            case "$op" in
+                "=")  [[ "$left" == "$right" ]] && result=true ;;
+                "<>") [[ "$left" != "$right" ]] && result=true ;;
+                "<")  [[ $left -lt $right ]] && result=true ;;
+                ">")  [[ $left -gt $right ]] && result=true ;;
+                "<=") [[ $left -le $right ]] && result=true ;;
+                ">=") [[ $left -ge $right ]] && result=true ;;
+            esac
+        fi
+        
+        debug "IF condition '$condition' evaluated to $result"
+        
+        if [[ "$result" == "true" ]]; then
+            # Execute THEN part
+            if is_numeric "$then_part"; then
+                # GOTO line number
+                CURRENT_LINE="$then_part"
+                debug "IF: GOTO line $then_part"
+            else
+                # Execute statement
+                execute_statement "$then_part"
+            fi
+        fi
+    else
+        error "Invalid IF statement: $stmt"
+    fi
+}
+
+# Execute GOSUB statement
+execute_gosub() {
+    local line_num="$1"
+    
+    if [[ -z "${PROGRAM_LINES[$line_num]:-}" ]]; then
+        error "GOSUB to undefined line: $line_num"
+    fi
+    
+    # Push return address onto stack
+    local next_line=$(find_next_line "$CURRENT_LINE")
+    GOSUB_STACK+=("$next_line")
+    
+    CURRENT_LINE="$line_num"
+    debug "GOSUB to line $line_num, return to $next_line"
+}
+
+# Execute RETURN statement
+execute_return() {
+    if [[ ${#GOSUB_STACK[@]} -eq 0 ]]; then
+        error "RETURN without GOSUB"
+    fi
+    
+    local return_line="${GOSUB_STACK[-1]}"
+    unset GOSUB_STACK[-1]
+    GOSUB_STACK=("${GOSUB_STACK[@]}")
+    
+    CURRENT_LINE="$return_line"
+    debug "RETURN to line $return_line"
+}
+
+# Execute statement
+execute_statement() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    debug "Executing: $stmt"
+    
+    # Skip empty statements and comments
+    [[ -z "$stmt" ]] && return
+    [[ "$stmt" =~ ^REM ]] && return
+    [[ "$stmt" =~ ^' ]] && return
+    
+    # Convert to uppercase for keyword matching
+    local upper_stmt="${stmt^^}"
+    
+    case "$upper_stmt" in
+        END|STOP)
+            debug "Program ended"
+            RUNNING=false
+            ;;
+        PRINT*)
+            local args="${stmt#*PRINT}"
+            execute_print "$args"
+            ;;
+        LET*)
+            local args="${stmt#*LET}"
+            execute_let "$args"
+            ;;
+        FOR*)
+            local args="${stmt#*FOR}"
+            execute_for "$args"
+            ;;
+        NEXT*)
+            execute_next "$stmt"
+            ;;
+        IF*)
+            execute_if "$stmt"
+            ;;
+        GOTO*)
+            local line_num="${stmt#*GOTO}"
+            line_num=$(trim "$line_num")
+            if [[ -z "${PROGRAM_LINES[$line_num]:-}" ]]; then
+                error "GOTO to undefined line: $line_num"
+            fi
+            CURRENT_LINE="$line_num"
+            debug "GOTO line $line_num"
+            ;;
+        GOSUB*)
+            local line_num="${stmt#*GOSUB}"
+            line_num=$(trim "$line_num")
+            execute_gosub "$line_num"
+            ;;
+        RETURN)
+            execute_return
+            ;;
+        *)
+            # Check if it's an assignment without LET
+            if [[ "$stmt" =~ ^[A-Z][A-Z0-9]*\$?[[:space:]]*= ]]; then
+                execute_let "$stmt"
+            else
+                error "Unknown statement: $stmt"
+            fi
+            ;;
+    esac
+}
+
+# Run the program
+run_program() {
+    debug "Starting program execution"
+    
+    RUNNING=true
+    
+    # Start with first line
+    local line_numbers
+    readarray -t line_numbers < <(get_line_numbers)
+    
+    if [[ ${#line_numbers[@]} -eq 0 ]]; then
+        error "No program lines to execute"
+    fi
+    
+    CURRENT_LINE="${line_numbers[0]}"
+    
+    while [[ "$RUNNING" == "true" ]]; do
+        if [[ -z "${PROGRAM_LINES[$CURRENT_LINE]:-}" ]]; then
+            debug "End of program reached"
+            break
+        fi
+        
+        local line_content="${PROGRAM_LINES[$CURRENT_LINE]}"
+        debug "Line $CURRENT_LINE: $line_content"
+        
+        execute_statement "$line_content"
+        
+        # Move to next line if not redirected
+        if [[ "$RUNNING" == "true" ]]; then
+            local next_line=$(find_next_line "$CURRENT_LINE")
+            if [[ -z "$next_line" ]]; then
+                debug "No more lines to execute"
+                break
+            fi
+            CURRENT_LINE="$next_line"
+        fi
+    done
+    
+    debug "Program execution completed"
+}
+
+# Main function
+main() {
+    parse_args "$@"
+    
+    if [[ -z "${PROGRAM_FILE:-}" ]]; then
+        usage
+        exit 1
+    fi
+    
+    load_program "$PROGRAM_FILE"
+    run_program
+}
+
+# Run main function with all arguments
+main "$@"

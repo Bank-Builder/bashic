@@ -1,0 +1,21 @@
+Package: bashic
+Version: 1.0
+Section: interpreters
+Priority: optional
+Architecture: all
+Depends: bash (>= 4.0)
+Maintainer: BASHIC Project <andrew@turpin.co.za>
+Description: BASIC interpreter written in bash
+ BASHIC is a complete BASIC interpreter implemented entirely in bash.
+ It supports classic DOS BASIC syntax including variables, control
+ structures, arrays, and built-in functions. No external dependencies
+ required beyond bash itself.
+ .
+ Features:
+  - Classic DOS BASIC compatibility
+  - Variables (numeric and string)
+  - Control flow (IF/THEN, FOR/NEXT, WHILE/WEND, GOSUB/RETURN)
+  - Built-in mathematical and string functions
+  - Text-mode only (no graphics)
+  - Line-numbered programs
+Homepage: https://github.com/bank-builder/bashic
