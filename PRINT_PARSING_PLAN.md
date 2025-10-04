@@ -41,7 +41,7 @@ The current PRINT parsing uses regex `^([^,;]+)([,;])(.*)$` which stops at the f
 - Test with semicolons: `PRINT LEFT$(A$, 2); "text"`
 
 ### Step 6: Regression Testing
-- Run full regression.bas test suite
+- Run full tests/regression.bas test suite
 - Ensure no existing functionality is broken
 - Verify all PRINT variations still work
 

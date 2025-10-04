@@ -70,13 +70,13 @@
 4. **Program control** (CLEAR, NEW, RUN)
 
 ## Testing Strategy
-- Add test cases to regression.bas for each new feature
+- Add test cases to tests/regression.bas for each new feature
 - Create focused test files in tests/ for development
 - Ensure no regression in existing functionality
 - Test edge cases and error conditions
 
 ## Success Criteria
 - All control flow statements from specification work correctly
-- regression.bas includes tests for all new features
+- tests/regression.bas includes tests for all new features
 - No existing functionality is broken
 - Code follows established patterns and reuses existing helpers

@@ -43,7 +43,7 @@ Need to support compound conditions: `A > 5 AND B < 10`, `X = 1 OR X = 2`
 - Test nested structures with compound conditions
 
 ### Step 7: Add to Regression Suite
-- Add comprehensive AND/OR tests to regression.bas
+- Add comprehensive AND/OR tests to tests/regression.bas
 - Verify no existing functionality is broken
 
 ## Code Reuse Strategy

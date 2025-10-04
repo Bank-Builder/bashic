@@ -72,4 +72,4 @@ All nested control structure testing has been implemented and verified working.
 1. `tests/nested_basic.bas` - Basic two-level nesting
 2. `tests/nested_complex.bas` - Three-level and complex scenarios
 3. `tests/nested_errors.bas` - Error condition testing
-4. Add nested tests to `examples/regression.bas`
+4. Add nested tests to `tests/regression.bas`

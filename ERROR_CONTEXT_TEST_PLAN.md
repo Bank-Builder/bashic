@@ -34,7 +34,7 @@ Create a negative test to verify that error context (line numbers and program co
 - Verify error messages are helpful for debugging
 
 ### Step 6: Add to Regression Suite
-- Add error context verification to regression.bas
+- Add error context verification to tests/regression.bas
 - Ensure error context is tested in automated tests
 - Document expected error message format
 

@@ -87,7 +87,7 @@
 1. `tests/mod_test.bas` - MOD operator testing
 2. `tests/logical_test.bas` - AND, OR, NOT testing
 3. `tests/arithmetic_complete.bas` - All arithmetic operators
-4. Add cases to `examples/regression.bas`
+4. Add cases to `tests/regression.bas`
 
 ### Success Criteria:
 - All 16 operators from specification implemented

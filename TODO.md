@@ -158,7 +158,7 @@ Create a BASIC interpreter using only bash that can execute .bas files with `./b
 - [x] **COMPLETED**: Verify all test programs run correctly
   - test1.bas: ✅ WORKING - all arithmetic and basic functions work
   - test2.bas: ✅ WORKING - all functionality working (DIM implemented)
-  - regression.bas: ✅ WORKING - 100% function coverage achieved
+  - tests/regression.bas: ✅ WORKING - 100% function coverage achieved
 - [x] Create additional test programs for edge cases
   - Created math_test.bas for comprehensive mathematical function testing
 
@@ -275,5 +275,5 @@ Create a BASIC interpreter using only bash that can execute .bas files with `./b
 1. Implement MOD operator with regression tests
 2. Implement AND/OR logical operators with regression tests
 3. Test all operators with nested control structures
-4. Update regression.bas for 100% operator coverage
+4. Update tests/regression.bas for 100% operator coverage
 5. Build and test debian package with complete functionality
