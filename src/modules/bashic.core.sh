@@ -34,6 +34,8 @@ load_program() {
     GOSUB_STACK=()
     FOR_STACK=()
     WHILE_STACK=()
+    DATA_ITEMS=()
+    DATA_POINTER=0
     
     # Read program lines
     while IFS= read -r line; do
@@ -120,15 +122,15 @@ load_program() {
         error "No valid program lines found"
     fi
     
-    # Pre-parse program for DIM statements
+    # Pre-parse program for DIM and DATA statements
     pre_parse_program
     
     debug "Program loaded: ${#PROGRAM_LINES[@]} lines"
 }
 
-# Pre-parse program to handle DIM statements
+# Pre-parse program to handle DIM and DATA statements
 pre_parse_program() {
-    debug "Pre-parsing program for DIM statements"
+    debug "Pre-parsing program for DIM and DATA statements"
     
     for line_num in "${!PROGRAM_LINES[@]}"; do
         local stmt="${PROGRAM_LINES[$line_num]}"
@@ -206,9 +208,49 @@ pre_parse_program() {
                 fi
             done
         fi
+        
+        # Parse DATA statements
+        if [[ "$upper_stmt" =~ ^DATA[[:space:]]+(.*)$ ]]; then
+            local data_args="${BASH_REMATCH[1]}"
+            
+            # Split by comma, preserving quoted strings
+            local in_quotes=0
+            local current=""
+            local i=0
+            
+            while [[ $i -lt ${#data_args} ]]; do
+                local char="${data_args:$i:1}"
+                if [[ "$char" == '"' ]]; then
+                    in_quotes=$((1 - in_quotes))
+                    current="${current}${char}"
+                elif [[ "$char" == "," && $in_quotes -eq 0 ]]; then
+                    current=$(trim "$current")
+                    # Remove quotes if present
+                    if [[ "$current" =~ ^\"(.*)\"$ ]]; then
+                        current="${BASH_REMATCH[1]}"
+                    fi
+                    DATA_ITEMS+=("$current")
+                    current=""
+                else
+                    current="${current}${char}"
+                fi
+                i=$((i + 1))
+            done
+            
+            # Add last item
+            if [[ -n "$current" ]]; then
+                current=$(trim "$current")
+                if [[ "$current" =~ ^\"(.*)\"$ ]]; then
+                    current="${BASH_REMATCH[1]}"
+                fi
+                DATA_ITEMS+=("$current")
+            fi
+            
+            debug "DATA: Added ${#DATA_ITEMS[@]} total items so far"
+        fi
     done
     
-    debug "Pre-parsing complete: ${#ARRAYS[@]} arrays declared"
+    debug "Pre-parsing complete: ${#ARRAYS[@]} arrays declared, ${#DATA_ITEMS[@]} DATA items"
 }
 
 # Get sorted line numbers
@@ -263,17 +305,25 @@ run_program() {
     
     while [[ "$RUNNING" == "true" ]]; do
         local stmt="${PROGRAM_LINES[$CURRENT_LINE]}"
+        local saved_line="$CURRENT_LINE"
+        
         debug "Executing line $CURRENT_LINE: $stmt"
         
         execute_statement "$stmt"
         
         if [[ "$RUNNING" == "true" ]]; then
-            # Move to next line unless current line was changed by control flow
-            local next_line=$(find_next_line "$CURRENT_LINE")
-            if [[ -n "$next_line" ]]; then
-                CURRENT_LINE="$next_line"
+            # Check if statement changed the line (GOTO, ON GOTO, etc.)
+            if [[ "$CURRENT_LINE" != "$saved_line" ]]; then
+                # Line was changed by control flow - use new line on next iteration
+                debug "Control flow changed line from $saved_line to $CURRENT_LINE"
             else
-                RUNNING=false
+                # Normal flow - advance to next line
+                local next_line=$(find_next_line "$CURRENT_LINE")
+                if [[ -n "$next_line" ]]; then
+                    CURRENT_LINE="$next_line"
+                else
+                    RUNNING=false
+                fi
             fi
         fi
     done

@@ -30,6 +30,8 @@ PROGRAM_COUNTER=0
 RUNNING=false
 DEBUG=false
 INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
+declare -a DATA_ITEMS  # DATA statement items
+DATA_POINTER=0  # Current position in DATA_ITEMS
 
 # Error handling with context
 error_with_context() {
@@ -185,6 +187,13 @@ math_sqr() {
     fi
 }
 
+math_rnd() {
+    local n="$1"
+    # Random number between 0 and 1
+    # Use RANDOM (0-32767) and scale to 0-1
+    echo "scale=10; $RANDOM / 32767" | bc -l 2>/dev/null || echo "0.$RANDOM"
+}
+
 # ===== STRING MODULE =====
 #!/bin/bash
 # BASHIC String Functions Module
@@ -240,6 +249,22 @@ str_val() {
     fi
 }
 
+str_space() {
+    local n="$1"
+    printf '%*s' "$n" ''
+}
+
+str_time() {
+    date +%H:%M:%S
+}
+
+str_tab() {
+    local col="$1"
+    # Return spaces to reach column position
+    # For simplicity, just return N spaces
+    printf '%*s' "$col" ''
+}
+
 # ===== EVAL MODULE =====
 #!/bin/bash
 # BASHIC Expression Evaluation Module
@@ -258,7 +283,7 @@ evaluate_expression() {
         return
     fi
     
-    # Handle INKEY$ special function (before string variables)
+    # Handle special functions (before string variables)
     if [[ "$expr" == "INKEY$" ]]; then
         # Non-blocking keyboard input - return empty or character
         # Use global buffer (pre-loaded at program start for non-interactive)
@@ -282,6 +307,12 @@ evaluate_expression() {
             sleep 0.01 2>/dev/null || true
             echo ""
         fi
+        return
+    fi
+    
+    if [[ "$expr" == "TIME$" ]]; then
+        # Return current time as HH:MM:SS
+        str_time
         return
     fi
     
@@ -331,6 +362,11 @@ evaluate_expression() {
             "SQR")
                 arg=$(evaluate_expression "$arg")
                 math_sqr "$arg"
+                return
+                ;;
+            "RND")
+                arg=$(evaluate_expression "$arg")
+                math_rnd "$arg"
                 return
                 ;;
             "LEN")
@@ -388,6 +424,16 @@ evaluate_expression() {
             "STR$")
                 arg=$(evaluate_expression "$arg")
                 echo "$arg"
+                return
+                ;;
+            "SPACE$")
+                arg=$(evaluate_expression "$arg")
+                str_space "$arg"
+                return
+                ;;
+            "TAB")
+                arg=$(evaluate_expression "$arg")
+                str_tab "$arg"
                 return
                 ;;
             *)
@@ -640,9 +686,10 @@ execute_for() {
         NUMERIC_VARS["$var_name"]="$start_val"
         
         # Push FOR loop info onto stack
+        # Store the FOR line so NEXT can jump back to loop body
         stack_push FOR_STACK "$var_name:$end_val:$step_val:$CURRENT_LINE"
         
-        debug "FOR $var_name = $start_val TO $end_val STEP $step_val"
+        debug "FOR $var_name = $start_val TO $end_val STEP $step_val at line $CURRENT_LINE"
     else
         error "Invalid FOR statement: $stmt"
     fi
@@ -676,8 +723,16 @@ execute_next() {
     fi
     
     if [[ "$continue_loop" == "true" ]]; then
-        CURRENT_LINE="$for_line"
-        debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $for_line"
+        # Jump to the line AFTER the FOR statement (the loop body starts there)
+        # Get the next line after FOR and set that as current
+        # This way the loop body executes again without re-executing FOR
+        local next_after_for=$(find_next_line "$for_line")
+        if [[ -n "$next_after_for" ]]; then
+            CURRENT_LINE="$next_after_for"
+            debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $CURRENT_LINE (after FOR at $for_line)"
+        else
+            error "NEXT: No line after FOR"
+        fi
     else
         # Pop FOR stack and continue
         stack_pop FOR_STACK >/dev/null
@@ -711,8 +766,14 @@ execute_wend() {
     debug "WEND: condition '$condition' evaluated to $result"
     
     if [[ "$result" == "true" ]]; then
-        CURRENT_LINE="$while_line"
-        debug "WEND: Continue loop, jumping to line $while_line"
+        # Jump to the line AFTER the WHILE statement (loop body starts there)
+        local next_after_while=$(find_next_line "$while_line")
+        if [[ -n "$next_after_while" ]]; then
+            CURRENT_LINE="$next_after_while"
+            debug "WEND: Continue loop, jumping to line $CURRENT_LINE (after WHILE at $while_line)"
+        else
+            error "WEND: No line after WHILE"
+        fi
     else
         # Pop WHILE stack and continue (same pattern as FOR/NEXT)
         stack_pop WHILE_STACK >/dev/null
@@ -1034,6 +1095,51 @@ execute_input() {
     
     debug "INPUT: Read values into variables"
 }
+execute_read() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    # Parse variable list (comma-separated)
+    IFS=',' read -ra vars <<< "$stmt"
+    
+    for var_name in "${vars[@]}"; do
+        var_name=$(trim "$var_name")
+        
+        # Check if we have more data
+        if [[ $DATA_POINTER -ge ${#DATA_ITEMS[@]} ]]; then
+            error "READ: Out of DATA"
+        fi
+        
+        local value="${DATA_ITEMS[$DATA_POINTER]}"
+        DATA_POINTER=$((DATA_POINTER + 1))
+        
+        # Assign to variable
+        if [[ "$var_name" =~ \$$ ]]; then
+            STRING_VARS["$var_name"]="$value"
+        else
+            NUMERIC_VARS["$var_name"]="$value"
+        fi
+        
+        debug "READ: $var_name = $value"
+    done
+}
+execute_restore() {
+    DATA_POINTER=0
+    debug "RESTORE: Data pointer reset to 0"
+}
+execute_randomize() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    # RANDOMIZE optionally takes a seed value
+    # In bash, we can't truly set RANDOM seed, but we can note it
+    if [[ -n "$stmt" ]]; then
+        local seed=$(evaluate_expression "$stmt")
+        debug "RANDOMIZE: Seed value $seed (noted but RANDOM is not seedable in bash)"
+    else
+        debug "RANDOMIZE: Using default randomization"
+    fi
+}
 execute_statement() {
     local stmt="$1"
     stmt=$(trim "$stmt")
@@ -1053,13 +1159,48 @@ execute_statement() {
             debug "Program ended"
             RUNNING=false
             ;;
-        KEY*|CLS|WIDTH*|LOCATE*|BEEP|RANDOMIZE*|COLOR*|SOUND*|POKE*|PEEK*|DEF*)
+        KEY*|CLS|WIDTH*|LOCATE*|BEEP|COLOR*|SOUND*|POKE*|PEEK*|DEF*)
             # GW-BASIC hardware/graphics commands - ignore (no-op stubs)
             debug "Ignoring GW-BASIC command: ${upper_stmt%% *}"
             ;;
-        DATA*|READ*|RESTORE*|ON*)
-            # GW-BASIC data/computed GOTO commands - not yet implemented
-            debug "Ignoring unimplemented command: ${upper_stmt%% *}"
+        DATA*)
+            # DATA statements are processed during pre-parsing, ignore during execution
+            debug "DATA statement already processed"
+            ;;
+        READ*)
+            local args="${stmt#*READ}"
+            execute_read "$args"
+            ;;
+        RESTORE)
+            execute_restore
+            ;;
+        RANDOMIZE*)
+            local args="${stmt#*RANDOMIZE}"
+            execute_randomize "$args"
+            ;;
+        ON*)
+            # ON...GOTO statement: ON var GOTO line1, line2, line3
+            if [[ "$upper_stmt" =~ ^ON[[:space:]]+(.+)[[:space:]]+GOTO[[:space:]]+(.+)$ ]]; then
+                local var_expr="${BASH_REMATCH[1]}"
+                local line_list="${BASH_REMATCH[2]}"
+                
+                # Evaluate the variable
+                local index=$(evaluate_expression "$var_expr")
+                
+                # Parse comma-separated line numbers
+                IFS=',' read -ra lines <<< "$line_list"
+                
+                # Check bounds (1-based indexing in BASIC)
+                if [[ $index -lt 1 || $index -gt ${#lines[@]} ]]; then
+                    debug "ON GOTO: Index $index out of range (1-${#lines[@]}), ignoring"
+                else
+                    local target_line=$(trim "${lines[$((index - 1))]}")
+                    CURRENT_LINE="$target_line"
+                    debug "ON $index GOTO $target_line"
+                fi
+            else
+                debug "ON statement (not GOTO): ignoring"
+            fi
             ;;
         PRINT*)
             local args="${stmt#*PRINT}"
@@ -1164,6 +1305,8 @@ load_program() {
     GOSUB_STACK=()
     FOR_STACK=()
     WHILE_STACK=()
+    DATA_ITEMS=()
+    DATA_POINTER=0
     
     # Read program lines
     while IFS= read -r line; do
@@ -1250,15 +1393,15 @@ load_program() {
         error "No valid program lines found"
     fi
     
-    # Pre-parse program for DIM statements
+    # Pre-parse program for DIM and DATA statements
     pre_parse_program
     
     debug "Program loaded: ${#PROGRAM_LINES[@]} lines"
 }
 
-# Pre-parse program to handle DIM statements
+# Pre-parse program to handle DIM and DATA statements
 pre_parse_program() {
-    debug "Pre-parsing program for DIM statements"
+    debug "Pre-parsing program for DIM and DATA statements"
     
     for line_num in "${!PROGRAM_LINES[@]}"; do
         local stmt="${PROGRAM_LINES[$line_num]}"
@@ -1336,9 +1479,49 @@ pre_parse_program() {
                 fi
             done
         fi
+        
+        # Parse DATA statements
+        if [[ "$upper_stmt" =~ ^DATA[[:space:]]+(.*)$ ]]; then
+            local data_args="${BASH_REMATCH[1]}"
+            
+            # Split by comma, preserving quoted strings
+            local in_quotes=0
+            local current=""
+            local i=0
+            
+            while [[ $i -lt ${#data_args} ]]; do
+                local char="${data_args:$i:1}"
+                if [[ "$char" == '"' ]]; then
+                    in_quotes=$((1 - in_quotes))
+                    current="${current}${char}"
+                elif [[ "$char" == "," && $in_quotes -eq 0 ]]; then
+                    current=$(trim "$current")
+                    # Remove quotes if present
+                    if [[ "$current" =~ ^\"(.*)\"$ ]]; then
+                        current="${BASH_REMATCH[1]}"
+                    fi
+                    DATA_ITEMS+=("$current")
+                    current=""
+                else
+                    current="${current}${char}"
+                fi
+                i=$((i + 1))
+            done
+            
+            # Add last item
+            if [[ -n "$current" ]]; then
+                current=$(trim "$current")
+                if [[ "$current" =~ ^\"(.*)\"$ ]]; then
+                    current="${BASH_REMATCH[1]}"
+                fi
+                DATA_ITEMS+=("$current")
+            fi
+            
+            debug "DATA: Added ${#DATA_ITEMS[@]} total items so far"
+        fi
     done
     
-    debug "Pre-parsing complete: ${#ARRAYS[@]} arrays declared"
+    debug "Pre-parsing complete: ${#ARRAYS[@]} arrays declared, ${#DATA_ITEMS[@]} DATA items"
 }
 
 # Get sorted line numbers
@@ -1393,17 +1576,25 @@ run_program() {
     
     while [[ "$RUNNING" == "true" ]]; do
         local stmt="${PROGRAM_LINES[$CURRENT_LINE]}"
+        local saved_line="$CURRENT_LINE"
+        
         debug "Executing line $CURRENT_LINE: $stmt"
         
         execute_statement "$stmt"
         
         if [[ "$RUNNING" == "true" ]]; then
-            # Move to next line unless current line was changed by control flow
-            local next_line=$(find_next_line "$CURRENT_LINE")
-            if [[ -n "$next_line" ]]; then
-                CURRENT_LINE="$next_line"
+            # Check if statement changed the line (GOTO, ON GOTO, etc.)
+            if [[ "$CURRENT_LINE" != "$saved_line" ]]; then
+                # Line was changed by control flow - use new line on next iteration
+                debug "Control flow changed line from $saved_line to $CURRENT_LINE"
             else
-                RUNNING=false
+                # Normal flow - advance to next line
+                local next_line=$(find_next_line "$CURRENT_LINE")
+                if [[ -n "$next_line" ]]; then
+                    CURRENT_LINE="$next_line"
+                else
+                    RUNNING=false
+                fi
             fi
         fi
     done

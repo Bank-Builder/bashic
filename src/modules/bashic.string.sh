@@ -51,3 +51,19 @@ str_val() {
         echo "0"
     fi
 }
+
+str_space() {
+    local n="$1"
+    printf '%*s' "$n" ''
+}
+
+str_time() {
+    date +%H:%M:%S
+}
+
+str_tab() {
+    local col="$1"
+    # Return spaces to reach column position
+    # For simplicity, just return N spaces
+    printf '%*s' "$col" ''
+}

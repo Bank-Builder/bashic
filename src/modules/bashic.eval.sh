@@ -15,7 +15,7 @@ evaluate_expression() {
         return
     fi
     
-    # Handle INKEY$ special function (before string variables)
+    # Handle special functions (before string variables)
     if [[ "$expr" == "INKEY$" ]]; then
         # Non-blocking keyboard input - return empty or character
         # Use global buffer (pre-loaded at program start for non-interactive)
@@ -39,6 +39,12 @@ evaluate_expression() {
             sleep 0.01 2>/dev/null || true
             echo ""
         fi
+        return
+    fi
+    
+    if [[ "$expr" == "TIME$" ]]; then
+        # Return current time as HH:MM:SS
+        str_time
         return
     fi
     
@@ -88,6 +94,11 @@ evaluate_expression() {
             "SQR")
                 arg=$(evaluate_expression "$arg")
                 math_sqr "$arg"
+                return
+                ;;
+            "RND")
+                arg=$(evaluate_expression "$arg")
+                math_rnd "$arg"
                 return
                 ;;
             "LEN")
@@ -145,6 +156,16 @@ evaluate_expression() {
             "STR$")
                 arg=$(evaluate_expression "$arg")
                 echo "$arg"
+                return
+                ;;
+            "SPACE$")
+                arg=$(evaluate_expression "$arg")
+                str_space "$arg"
+                return
+                ;;
+            "TAB")
+                arg=$(evaluate_expression "$arg")
+                str_tab "$arg"
                 return
                 ;;
             *)

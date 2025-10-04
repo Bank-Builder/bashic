@@ -44,3 +44,10 @@ math_sqr() {
         echo "$x"
     fi
 }
+
+math_rnd() {
+    local n="$1"
+    # Random number between 0 and 1
+    # Use RANDOM (0-32767) and scale to 0-1
+    echo "scale=10; $RANDOM / 32767" | bc -l 2>/dev/null || echo "0.$RANDOM"
+}

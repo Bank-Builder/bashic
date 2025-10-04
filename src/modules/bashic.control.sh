@@ -15,9 +15,10 @@ execute_for() {
         NUMERIC_VARS["$var_name"]="$start_val"
         
         # Push FOR loop info onto stack
+        # Store the FOR line so NEXT can jump back to loop body
         stack_push FOR_STACK "$var_name:$end_val:$step_val:$CURRENT_LINE"
         
-        debug "FOR $var_name = $start_val TO $end_val STEP $step_val"
+        debug "FOR $var_name = $start_val TO $end_val STEP $step_val at line $CURRENT_LINE"
     else
         error "Invalid FOR statement: $stmt"
     fi
@@ -51,8 +52,16 @@ execute_next() {
     fi
     
     if [[ "$continue_loop" == "true" ]]; then
-        CURRENT_LINE="$for_line"
-        debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $for_line"
+        # Jump to the line AFTER the FOR statement (the loop body starts there)
+        # Get the next line after FOR and set that as current
+        # This way the loop body executes again without re-executing FOR
+        local next_after_for=$(find_next_line "$for_line")
+        if [[ -n "$next_after_for" ]]; then
+            CURRENT_LINE="$next_after_for"
+            debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $CURRENT_LINE (after FOR at $for_line)"
+        else
+            error "NEXT: No line after FOR"
+        fi
     else
         # Pop FOR stack and continue
         stack_pop FOR_STACK >/dev/null
@@ -86,8 +95,14 @@ execute_wend() {
     debug "WEND: condition '$condition' evaluated to $result"
     
     if [[ "$result" == "true" ]]; then
-        CURRENT_LINE="$while_line"
-        debug "WEND: Continue loop, jumping to line $while_line"
+        # Jump to the line AFTER the WHILE statement (loop body starts there)
+        local next_after_while=$(find_next_line "$while_line")
+        if [[ -n "$next_after_while" ]]; then
+            CURRENT_LINE="$next_after_while"
+            debug "WEND: Continue loop, jumping to line $CURRENT_LINE (after WHILE at $while_line)"
+        else
+            error "WEND: No line after WHILE"
+        fi
     else
         # Pop WHILE stack and continue (same pattern as FOR/NEXT)
         stack_pop WHILE_STACK >/dev/null

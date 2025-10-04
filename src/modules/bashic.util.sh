@@ -21,6 +21,8 @@ PROGRAM_COUNTER=0
 RUNNING=false
 DEBUG=false
 INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
+declare -a DATA_ITEMS  # DATA statement items
+DATA_POINTER=0  # Current position in DATA_ITEMS
 
 # Error handling with context
 error_with_context() {

@@ -67,31 +67,39 @@
 - Return string of N spaces
 - **Implementation**: `printf '%*s' N ''`
 
-#### MEDIUM PRIORITY (Can stub/ignore for now)
+#### MEDIUM PRIORITY (Screen Module Features)
 
-**7. LOCATE Statement** (Lines 4, 6, 10-12, 17, 19, 32, 54, 83, 86)
-- Position cursor at row, column
-- **Stub**: Ignore (no-op) - already implemented
+**NEW MODULE: bashic.screen.sh**
+Create a new screen module using ANSI escape codes to implement display functions:
 
-**8. COLOR Statement** (Lines 17, 19, 38, 83)
-- Set text/background colors
-- **Stub**: Ignore (no-op) - already implemented
-
-**9. SOUND/BEEP Statements** (Lines 57, 68)
-- Make sound/beep
-- **Stub**: Ignore (no-op) - already implemented
-
-**10. KEY OFF/WIDTH Statements** (Lines 3, 9)
-- Display control
-- **Stub**: Ignore (no-op) - already implemented
-
-**11. POKE/PEEK Statements** (Line 17)
-- Memory manipulation
-- **Stub**: Ignore (no-op) - already implemented
-
-**12. CLS Statement** (Lines 3, 10, 32, 54, 56, 86)
+**7. CLS Statement** (Lines 3, 10, 32, 54, 56, 86)
 - Clear screen
-- **Stub**: Ignore (no-op) - already implemented
+- **Implementation**: `echo -e "\033[2J\033[H"` (ANSI clear screen + home)
+
+**8. LOCATE Statement** (Lines 4, 6, 10-12, 17, 19, 32, 54, 83, 86)
+- Position cursor at row, column
+- **Implementation**: `echo -ne "\033[${row};${col}H"` (ANSI cursor positioning)
+
+**9. COLOR Statement** (Lines 17, 19, 38, 83)
+- Set text/background colors
+- **Implementation**: ANSI color codes `\033[${fg};${bg}m`
+- Standard colors: 30-37 (foreground), 40-47 (background)
+
+**10. WIDTH Statement** (Lines 3, 9)
+- Set screen width
+- **Implementation**: Store in SCREEN_WIDTH variable (doesn't actually resize terminal)
+
+**11. SOUND/BEEP Statements** (Lines 57, 68)
+- Make sound/beep
+- **Implementation**: `echo -e "\a"` (terminal bell)
+
+**12. KEY OFF Statement** (Line 3)
+- Disable function key display
+- **Stub**: Ignore (no-op) - not relevant for modern terminals
+
+**13. POKE/PEEK Statements** (Line 17)
+- Memory manipulation
+- **Stub**: Ignore (no-op) - cannot implement in bash
 
 #### LOW PRIORITY (Advanced features)
 

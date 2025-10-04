@@ -241,6 +241,51 @@ execute_input() {
     
     debug "INPUT: Read values into variables"
 }
+execute_read() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    # Parse variable list (comma-separated)
+    IFS=',' read -ra vars <<< "$stmt"
+    
+    for var_name in "${vars[@]}"; do
+        var_name=$(trim "$var_name")
+        
+        # Check if we have more data
+        if [[ $DATA_POINTER -ge ${#DATA_ITEMS[@]} ]]; then
+            error "READ: Out of DATA"
+        fi
+        
+        local value="${DATA_ITEMS[$DATA_POINTER]}"
+        DATA_POINTER=$((DATA_POINTER + 1))
+        
+        # Assign to variable
+        if [[ "$var_name" =~ \$$ ]]; then
+            STRING_VARS["$var_name"]="$value"
+        else
+            NUMERIC_VARS["$var_name"]="$value"
+        fi
+        
+        debug "READ: $var_name = $value"
+    done
+}
+execute_restore() {
+    DATA_POINTER=0
+    debug "RESTORE: Data pointer reset to 0"
+}
+execute_randomize() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    # RANDOMIZE optionally takes a seed value
+    # In bash, we can't truly set RANDOM seed, but we can note it
+    if [[ -n "$stmt" ]]; then
+        local seed=$(evaluate_expression "$stmt")
+        debug "RANDOMIZE: Seed value $seed (noted but RANDOM is not seedable in bash)"
+    else
+        debug "RANDOMIZE: Using default randomization"
+    fi
+}
 execute_statement() {
     local stmt="$1"
     stmt=$(trim "$stmt")
@@ -260,13 +305,48 @@ execute_statement() {
             debug "Program ended"
             RUNNING=false
             ;;
-        KEY*|CLS|WIDTH*|LOCATE*|BEEP|RANDOMIZE*|COLOR*|SOUND*|POKE*|PEEK*|DEF*)
+        KEY*|CLS|WIDTH*|LOCATE*|BEEP|COLOR*|SOUND*|POKE*|PEEK*|DEF*)
             # GW-BASIC hardware/graphics commands - ignore (no-op stubs)
             debug "Ignoring GW-BASIC command: ${upper_stmt%% *}"
             ;;
-        DATA*|READ*|RESTORE*|ON*)
-            # GW-BASIC data/computed GOTO commands - not yet implemented
-            debug "Ignoring unimplemented command: ${upper_stmt%% *}"
+        DATA*)
+            # DATA statements are processed during pre-parsing, ignore during execution
+            debug "DATA statement already processed"
+            ;;
+        READ*)
+            local args="${stmt#*READ}"
+            execute_read "$args"
+            ;;
+        RESTORE)
+            execute_restore
+            ;;
+        RANDOMIZE*)
+            local args="${stmt#*RANDOMIZE}"
+            execute_randomize "$args"
+            ;;
+        ON*)
+            # ON...GOTO statement: ON var GOTO line1, line2, line3
+            if [[ "$upper_stmt" =~ ^ON[[:space:]]+(.+)[[:space:]]+GOTO[[:space:]]+(.+)$ ]]; then
+                local var_expr="${BASH_REMATCH[1]}"
+                local line_list="${BASH_REMATCH[2]}"
+                
+                # Evaluate the variable
+                local index=$(evaluate_expression "$var_expr")
+                
+                # Parse comma-separated line numbers
+                IFS=',' read -ra lines <<< "$line_list"
+                
+                # Check bounds (1-based indexing in BASIC)
+                if [[ $index -lt 1 || $index -gt ${#lines[@]} ]]; then
+                    debug "ON GOTO: Index $index out of range (1-${#lines[@]}), ignoring"
+                else
+                    local target_line=$(trim "${lines[$((index - 1))]}")
+                    CURRENT_LINE="$target_line"
+                    debug "ON $index GOTO $target_line"
+                fi
+            else
+                debug "ON statement (not GOTO): ignoring"
+            fi
             ;;
         PRINT*)
             local args="${stmt#*PRINT}"
