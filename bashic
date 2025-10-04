@@ -33,6 +33,8 @@ BASHIC_INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
 BASHIC_OLD_TTY_SETTINGS=""  # Store original terminal settings
 declare -a BASHIC_DATA_ITEMS  # DATA statement items
 BASHIC_DATA_POINTER=0  # Current position in DATA_ITEMS
+declare -a BASHIC_DATA_LINES  # Line numbers containing DATA statements
+declare -a BASHIC_DATA_START_POS  # Starting position in DATA_ITEMS for each DATA line
 
 # Error handling with context
 error_with_context() {
@@ -1506,12 +1508,12 @@ execute_read() {
         var_name=$(trim "$var_name")
         
         # Check if we have more data
-        if [[ ${DATA_POINTER:-0} -ge ${#DATA_ITEMS[@]} ]]; then
+        if [[ ${BASHIC_DATA_POINTER:-0} -ge ${#BASHIC_DATA_ITEMS[@]} ]]; then
             error "READ: Out of DATA"
         fi
         
-        local value="${DATA_ITEMS[$DATA_POINTER]}"
-        DATA_POINTER=$((DATA_POINTER + 1))
+        local value="${BASHIC_DATA_ITEMS[$BASHIC_DATA_POINTER]}"
+        BASHIC_DATA_POINTER=$((BASHIC_DATA_POINTER + 1))
         
         # Assign to variable
         if [[ "$var_name" =~ \$$ ]]; then
@@ -1524,8 +1526,35 @@ execute_read() {
     done
 }
 execute_restore() {
-    DATA_POINTER=0
-    debug "RESTORE: Data pointer reset to 0"
+    local stmt="${1:-}"
+    stmt=$(trim "$stmt")
+    
+    if [[ -z "$stmt" ]]; then
+        # RESTORE without line number - reset to beginning
+        BASHIC_DATA_POINTER=0
+        debug "RESTORE: Data pointer reset to 0"
+    else
+        # RESTORE with line number - find the DATA statement
+        local target_line=$(evaluate_expression "$stmt")
+        debug "RESTORE: Looking for DATA statement at line $target_line"
+        
+        # Find the DATA line number that matches or is closest before target_line
+        local found_pos=0
+        local i=0
+        while [[ $i -lt ${#BASHIC_DATA_LINES[@]} ]]; do
+            local data_line="${BASHIC_DATA_LINES[$i]}"
+            if [[ $data_line -le $target_line ]]; then
+                found_pos="${BASHIC_DATA_START_POS[$i]}"
+                debug "RESTORE: Found DATA line $data_line at position $found_pos"
+            else
+                break
+            fi
+            i=$((i + 1))
+        done
+        
+        BASHIC_DATA_POINTER=$found_pos
+        debug "RESTORE: Data pointer set to $found_pos"
+    fi
 }
 execute_randomize() {
     local stmt="${1:-}"
@@ -1606,8 +1635,9 @@ execute_statement() {
             local args="${stmt#*READ}"
             execute_read "$args"
             ;;
-        RESTORE)
-            execute_restore
+        RESTORE*)
+            local args="${stmt#*RESTORE}"
+            execute_restore "$args"
             ;;
         RANDOMIZE*)
             local args="${stmt#*RANDOMIZE}"
@@ -1742,8 +1772,10 @@ load_program() {
     GOSUB_STACK=()
     FOR_STACK=()
     WHILE_STACK=()
-    DATA_ITEMS=()
-    DATA_POINTER=0
+    BASHIC_DATA_ITEMS=()
+    BASHIC_DATA_POINTER=0
+    BASHIC_DATA_LINES=()
+    BASHIC_DATA_START_POS=()
     
     # Read program lines
     while IFS= read -r line; do
@@ -1925,6 +1957,11 @@ pre_parse_program() {
         if [[ "$upper_stmt" =~ ^DATA[[:space:]]+(.*)$ ]]; then
             local data_args="${BASH_REMATCH[1]}"
             
+            # Record this DATA line and its starting position
+            BASHIC_DATA_LINES+=("$line_num")
+            BASHIC_DATA_START_POS+=("${#BASHIC_DATA_ITEMS[@]}")
+            debug "DATA line $line_num starts at position ${#BASHIC_DATA_ITEMS[@]}"
+            
             # Split by comma, preserving quoted strings
             local in_quotes=0
             local current=""
@@ -1934,14 +1971,10 @@ pre_parse_program() {
                 local char="${data_args:$i:1}"
                 if [[ "$char" == '"' ]]; then
                     in_quotes=$((1 - in_quotes))
-                    current="${current}${char}"
+                    # Don't include quotes in the actual data
                 elif [[ "$char" == "," && $in_quotes -eq 0 ]]; then
                     current=$(trim "$current")
-                    # Remove quotes if present
-                    if [[ "$current" =~ ^\"(.*)\"$ ]]; then
-                        current="${BASH_REMATCH[1]}"
-                    fi
-                    DATA_ITEMS+=("$current")
+                    BASHIC_DATA_ITEMS+=("$current")
                     current=""
                 else
                     current="${current}${char}"
@@ -1952,17 +1985,14 @@ pre_parse_program() {
             # Add last item
             if [[ -n "$current" ]]; then
                 current=$(trim "$current")
-                if [[ "$current" =~ ^\"(.*)\"$ ]]; then
-                    current="${BASH_REMATCH[1]}"
-                fi
-                DATA_ITEMS+=("$current")
+                BASHIC_DATA_ITEMS+=("$current")
             fi
             
-            debug "DATA: Added ${#DATA_ITEMS[@]} total items so far"
+            debug "DATA: Added ${#BASHIC_DATA_ITEMS[@]} total items so far"
         fi
     done
     
-    debug "Pre-parsing complete: ${#ARRAYS[@]} arrays declared, ${#DATA_ITEMS[@]} DATA items"
+    debug "Pre-parsing complete: ${#ARRAYS[@]} arrays declared, ${#BASHIC_DATA_ITEMS[@]} DATA items"
 }
 
 # Get sorted line numbers
