@@ -323,15 +323,39 @@ init_keyboard() {
         is_terminal=true
     fi
     
-    # Method 3: Check if TERM environment variable is set (indicates terminal)
-    # Even "dumb" terminals can be interactive for our purposes
-    if [ -n "$TERM" ]; then
+    # Method 3: Check if TERM environment variable is set AND stdin is a terminal
+    # Only consider it a terminal if stdin is actually connected to a terminal
+    if [ -n "$TERM" ] && [ -t 0 ]; then
         is_terminal=true
     fi
     
-    # Force non-interactive mode to avoid hanging
-    debug "Forcing non-interactive mode"
-    BASHIC_TTY_SETTINGS=""
+    # Force interactive mode for testing
+    if [ "${BASHIC_FORCE_INTERACTIVE:-}" = "true" ]; then
+        debug "Forcing interactive mode via BASHIC_FORCE_INTERACTIVE"
+        is_terminal=true
+    fi
+    
+    if [ "$is_terminal" = true ]; then
+        debug "Terminal detected - setting up interactive mode"
+        # Try to get TTY settings, but don't fail if stty doesn't work
+        BASHIC_TTY_SETTINGS=$(stty -g 2>/dev/null || echo "raw")
+        debug "stty -g returned: '$BASHIC_TTY_SETTINGS'"
+        
+        # Try to set raw mode, but don't fail if it doesn't work
+        if [ -n "$BASHIC_TTY_SETTINGS" ] && [ "$BASHIC_TTY_SETTINGS" != "raw" ]; then
+            stty raw -echo min 0 time 0 2>/dev/null || true
+            debug "stty raw command executed"
+        else
+            debug "Using fallback terminal mode"
+            BASHIC_TTY_SETTINGS="fallback"
+        fi
+    else
+        debug "No terminal detected - using non-interactive mode"
+        BASHIC_TTY_SETTINGS=""
+        # Read all available input into buffer for non-interactive mode
+        BASHIC_INKEY_BUFFER=$(timeout 0.1 cat 2>/dev/null || echo "")
+        debug "Non-interactive mode - loaded input buffer: '$BASHIC_INKEY_BUFFER'"
+    fi
 }
 
 # Function to convert key to readable name
@@ -360,8 +384,38 @@ get_key() {
     local timeout="${1:-1}"  # Default to 1 second timeout
     local char=""
     
-    # Always return empty for now
-    char=""
+    # Debug TTY settings
+    debug "get_key() - BASHIC_TTY_SETTINGS='$BASHIC_TTY_SETTINGS'"
+    
+    # Check if we're in interactive mode
+    if [ -n "$BASHIC_TTY_SETTINGS" ]; then
+        debug "Interactive mode - reading from terminal"
+        # Try different methods to read input
+        if [ "$BASHIC_TTY_SETTINGS" = "fallback" ]; then
+            # Fallback method - use timeout to avoid blocking
+            debug "Using fallback input method - non-blocking read"
+            char=$(dd bs=1 count=1 < /dev/tty 2>/dev/null | tr -d '\0' || echo "")
+        else
+            # Standard method - use read to get single character
+            debug "Using standard input method - reading single character"
+            read -n 1 char 2>/dev/null || char=""
+        fi
+        debug "get_key() read character: '$char'"
+    else
+        debug "Non-interactive mode - using buffer"
+        # Non-interactive mode - read from buffer or stdin
+        if [ -n "$BASHIC_INKEY_BUFFER" ]; then
+            # Use buffered input
+            char="${BASHIC_INKEY_BUFFER:0:1}"
+            BASHIC_INKEY_BUFFER="${BASHIC_INKEY_BUFFER:1}"
+            debug "get_key() read from buffer: '$char', remaining: '$BASHIC_INKEY_BUFFER'"
+        else
+            # Read directly from stdin
+            char=$(dd bs=1 count=1 2>/dev/null || echo "")
+            debug "get_key() read from stdin: '$char'"
+        fi
+    fi
+    
     echo "$char"
 }
 
@@ -369,15 +423,28 @@ get_key() {
 
 # INKEY$ function for BASIC compatibility - SEMAPHORE PROTECTED
 INKEY_STR() {
+    # Wait while semaphore is > 0 (another call is active)
+    local wait_count=0
+    while [ $BASHIC_INKEY_SEMAPHORE -gt 0 ] && [ $wait_count -lt 100 ]; do
+        debug "INKEY$ waiting - semaphore: $BASHIC_INKEY_SEMAPHORE, count: $wait_count"
+        sleep 0.08  # Longer wait for background process cleanup
+        wait_count=$((wait_count + 1))
+    done
+    
+    if [ $wait_count -ge 100 ]; then
+        debug "INKEY$ timeout waiting - forcing semaphore reset"
+        BASHIC_INKEY_SEMAPHORE=0
+    fi
+    
     # Semaphore: increment counter to claim access
     BASHIC_INKEY_SEMAPHORE=$((BASHIC_INKEY_SEMAPHORE + 1))
     debug "INKEY$ semaphore incremented to: $BASHIC_INKEY_SEMAPHORE"
     
-    # Wait while semaphore is > 1 (another call is active)
-    while [ $BASHIC_INKEY_SEMAPHORE -gt 1 ]; do
-        debug "INKEY$ waiting - semaphore: $BASHIC_INKEY_SEMAPHORE"
-        sleep 0.01  # Short wait
-    done
+    # Force reset if semaphore is stuck
+    if [ $BASHIC_INKEY_SEMAPHORE -gt 10 ]; then
+        debug "INKEY$ semaphore stuck - forcing reset"
+        BASHIC_INKEY_SEMAPHORE=1
+    fi
     
     debug "INKEY$ acquired access - semaphore: $BASHIC_INKEY_SEMAPHORE"
     
@@ -729,6 +796,11 @@ evaluate_expression() {
             "TAB")
                 arg=$(evaluate_expression "$arg")
                 str_tab "$arg"
+                return
+                ;;
+            "INKEY")
+                # Handle INKEY() function call (same as INKEY$)
+                INKEY_STR
                 return
                 ;;
             *)
@@ -1658,11 +1730,9 @@ load_program() {
     # Initialize keyboard handling
     init_keyboard
     
-    # Always use non-interactive mode for now
-    debug "Forcing non-interactive mode - setting empty buffer"
-    BASHIC_INKEY_BUFFER=""
+    # Initialize semaphore
     BASHIC_INKEY_SEMAPHORE=0
-    debug "BASHIC_INKEY_BUFFER set to empty, BASHIC_INKEY_SEMAPHORE set to 0"
+    debug "BASHIC_INKEY_SEMAPHORE initialized to 0"
     
     # Clear existing program
     PROGRAM_LINES=()
