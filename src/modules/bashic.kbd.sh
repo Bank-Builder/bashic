@@ -47,8 +47,9 @@ get_key() {
         # local IFS=
         # local char
         
-        # Read a single character with timeout using read (more reliable)
-        if read -r -n1 -t 4 char; then
+        # Read a single character with timeout - use dd for raw input
+        char=$(timeout 4 dd bs=1 count=1 2>/dev/null | head -c1)
+        if [ ${#char} -gt 0 ]; then
             echo -n "$char"
         else
             echo ""
