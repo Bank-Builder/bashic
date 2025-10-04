@@ -22,11 +22,11 @@ init_keyboard() {
 key_name() {
     local key="$1"
     case "$key" in
-        $'\n') echo "ENTER" ;;
+        $'\r') echo "ENTER" ;;
         $'\e') echo "ESC" ;;
-        # ' ') echo "SPACE" ;;
         $'\t') echo "TAB" ;;
-        $'\b') echo "BACKSPACE" ;;
+        $'\b'|$'\x7f') echo "BACKSPACE" ;;  # handle DEL too
+        ' ') echo "SPACE" ;;
         *) echo "$key" ;;
     esac
 }
@@ -43,21 +43,28 @@ cleanup_keyboard() {
 get_key() {
     local char
     if [ -t 0 ]; then
-        # Interactive mode - read directly from terminal
-        # Read a single character with timeout - use dd for raw input
-        char=$(timeout 4 dd bs=1 count=1 2>/dev/null | head -c1)
-        if [ ${#char} -gt 0 ]; then
-            echo -n "$char"
-        else
-            echo ""
-        fi
+        local old_stty
+        old_stty=$(stty -g)
+        stty -echo -icanon time 40 min 0
+        char=$(dd bs=1 count=1 2>/dev/null)
+        stty "$old_stty"
     else
-        # Non-interactive mode - read from stdin
-        if read -r -n1 -t 4 char; then
-            echo -n "$char"
-        else
-            echo ""
-        fi
+        IFS= read -r -n1 -t 4 char || return 0
+    fi
+
+    printf '%s' "$char"
+
+}
+
+
+
+# INKEY$ function for BASIC compatibility
+INKEY$() {
+    local key=$(get_key)
+    if [ ${#key} -gt 0 ]; then
+        echo "$key"
+    else
+        echo ""
     fi
 }
 
