@@ -1967,7 +1967,7 @@ pre_parse_program() {
                 # Parse DIM statement: ARRAY(SIZE) or ARRAY$(SIZE) or ARRAY(SIZE,SIZE) for 2D
                 # For 2D arrays, we'll use the first dimension as size
                 # SIZE can be a number or a variable name (for dynamic sizing)
-                if [[ "$array_decl" =~ ^([A-Z][A-Z0-9_]*)(\$?)\(([A-Z0-9_%]+)(,[A-Z0-9_%]+)?\)$ ]]; then
+                if [[ "$array_decl" =~ ^([A-Za-z][A-Za-z0-9_]*)(\$?)\(([A-Za-z0-9_%]+)([[:space:]]*,[[:space:]]*[A-Za-z0-9_%]+)?\)$ ]]; then
                     local array_name="${BASH_REMATCH[1]}"
                     local is_string="${BASH_REMATCH[2]}"
                     local size_expr="${BASH_REMATCH[3]}"
