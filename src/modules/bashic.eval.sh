@@ -18,7 +18,7 @@ evaluate_expression() {
     # Handle special functions (before string variables)
     if [[ "$expr" == "INKEY$" ]]; then
         # Use the kbd module's INKEY$ function
-        INKEY$
+        INKEY_STR
         return
     fi
     

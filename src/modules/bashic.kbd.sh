@@ -59,7 +59,7 @@ get_key() {
 
 
 # INKEY$ function for BASIC compatibility
-INKEY$() {
+INKEY_STR() {
     echo $(get_key)
 }
 
