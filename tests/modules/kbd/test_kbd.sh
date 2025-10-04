@@ -71,7 +71,7 @@ fi
 echo -e "\nTest 4: Testing interactive mode"
 if [[ -t 0 ]]; then
     echo "Interactive mode - press ENTER within 4s to test input"
-    key=$(init_keyboard; get_key)
+    key=$(init_keyboard; get_key; cleanup_keyboard)
     if [[ -n "$key" ]]; then
         # Convert special characters to readable names
         case "$key" in
