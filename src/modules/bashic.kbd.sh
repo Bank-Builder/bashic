@@ -26,6 +26,7 @@ key_name() {
         $'\e') echo "ESC" ;;
         $'\t') echo "TAB" ;;
         $'\b'|$'\x7f') echo "BACKSPACE" ;;  # handle DEL too
+        $' ') echo " " ;;
         *) echo "$key" ;;
     esac
 }
@@ -42,24 +43,25 @@ cleanup_keyboard() {
 get_key() {
     local char
     if [ -t 0 ]; then
-        local old_stty
-        old_stty=$(stty -g)
-        stty -echo -icanon time 40 min 0
-        char=$(dd bs=1 count=1 2>/dev/null)
-        stty "$old_stty"
+        # Use read with timeout
+        IFS= read -r -n1 -t 1 char 2>/dev/null || char=""
     else
-        IFS= read -r -n1 -t 4 char || return 0
+        IFS= read -r -n1 -t 4 char || char=""
     fi
 
     printf '%s' "$char"
-
 }
 
 
 
 # INKEY$ function for BASIC compatibility
 INKEY_STR() {
-    echo $(get_key)
+    local key=$(get_key)
+    if [ -n "$key" ]; then
+        key_name "$key"
+    else
+        echo ""
+    fi
 }
 
 # Set up cleanup trap

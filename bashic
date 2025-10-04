@@ -245,18 +245,11 @@ cleanup_keyboard() {
 # Get a single character from keyboard or buffer
 get_key() {
     local char
-    # Check if we're in interactive mode by checking if terminal was set up
-    if [ -n "$OLD_TTY_SETTINGS" ]; then
-        # Interactive mode: use read with timeout
+    if [ -t 0 ]; then
+        # Use read with timeout
         IFS= read -r -n1 -t 1 char 2>/dev/null || char=""
     else
-        # Non-interactive mode: check if we have buffered input
-        if [ -n "$INKEY_BUFFER" ]; then
-            char="${INKEY_BUFFER:0:1}"
-            INKEY_BUFFER="${INKEY_BUFFER:1}"
-        else
-            char=""
-        fi
+        IFS= read -r -n1 -t 4 char || char=""
     fi
 
     printf '%s' "$char"
@@ -266,7 +259,12 @@ get_key() {
 
 # INKEY$ function for BASIC compatibility
 INKEY_STR() {
-    get_key
+    local key=$(get_key)
+    if [ -n "$key" ]; then
+        key_name "$key"
+    else
+        echo ""
+    fi
 }
 
 # Set up cleanup trap
