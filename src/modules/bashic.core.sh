@@ -78,6 +78,8 @@ pre_parse_program() {
                 # Store array metadata
                 local array_type="numeric"
                 [[ -n "$is_string" ]] && array_type="string"
+                # Include $ in array name for string arrays for consistency
+                [[ -n "$is_string" ]] && array_name="${array_name}$"
                 ARRAYS[$array_name]="$array_type:$size"
                 
                 debug "DIM: $array_name($size) - $array_type"

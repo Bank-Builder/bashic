@@ -777,7 +777,22 @@ execute_print() {
     
     # Simple parsing - handle comma and semicolon separated values
     # For single expressions, just evaluate directly
-    if [[ "$args" != *","* && "$args" != *";"* ]]; then
+    # Check if there are separators outside string literals
+    local has_separators=false
+    local i=0
+    local in_string=0
+    while [[ $i -lt ${#args} ]]; do
+        local char="${args:$i:1}"
+        if [[ "$char" == '"' ]]; then
+            in_string=$((!in_string))
+        elif [[ ($char == "," || $char == ";") && $in_string -eq 0 ]]; then
+            has_separators=true
+            break
+        fi
+        i=$((i + 1))
+    done
+
+    if [[ "$has_separators" == "false" ]]; then
         local value=$(evaluate_expression "$args")
         echo -e "$value"
         return
@@ -817,7 +832,11 @@ execute_print() {
             value=$(evaluate_expression "$value")
             
             if [[ "$sep_char" == "," ]]; then
-                output="${output}${value}\t"
+                # BASIC comma formatting: align to 14-character columns
+                local current_len=${#output}
+                local next_column=$(((current_len / 14 + 1) * 14))
+                local spaces_needed=$((next_column - current_len))
+                output="${output}$(printf '%*s' $spaces_needed '')${value}"
             else
                 output="${output}${value}"
                 no_newline=true
@@ -839,13 +858,18 @@ execute_print() {
 execute_let() {
     local stmt="$1"
     stmt=$(trim "$stmt")
-    
+
+    debug "execute_let called with: $stmt"
+
     # Handle array assignment: VARNAME(INDEX) = VALUE
-    local array_assign_regex='^([A-Z][A-Z0-9_]*)\(([^)]+)\)[[:space:]]*=[[:space:]]*(.*)$'
+    # For: NUMS(0) = 100, WORDS$(0) = "word"
+    local array_assign_regex='^([A-Z][A-Z0-9_]*\$?)\(([^)]+)\)[[:space:]]*=[[:space:]]*(.*)$'
+    debug "Checking array assignment regex against: $stmt"
     if [[ "$stmt" =~ $array_assign_regex ]]; then
         local array_name="${BASH_REMATCH[1]}"
         local index_expr="${BASH_REMATCH[2]}"
         local value="${BASH_REMATCH[3]}"
+        debug "Array assignment matched: array_name=$array_name, index_expr=$index_expr, value=$value"
         
         # Evaluate index and value
         local index=$(evaluate_expression "$index_expr")
@@ -970,10 +994,14 @@ execute_statement() {
             ;;
         *)
             # Check if it's an assignment without LET
-            local assign_regex='^[A-Z][A-Z0-9_]*(\$|\([^)]+\))?[[:space:]]*='
+            # Pattern: VARNAME[$(INDEX)] = VALUE or VARNAME = VALUE
+            # Matches: A = 5, A$ = "hello", NUMS(0) = 100, WORDS$(0) = "word"
+            local assign_regex='^[A-Z][A-Z0-9_]*(\$\([^)]+\)|[A-Z0-9_]*|\$|\([^)]+\))?[[:space:]]*='
+            debug "Checking assignment regex against: $stmt"
             if [[ "$stmt" =~ $assign_regex ]]; then
                 execute_let "$stmt"
             else
+                debug "Statement does not match assignment regex: $stmt"
                 error "Unknown statement: $stmt"
             fi
             ;;
@@ -1061,6 +1089,8 @@ pre_parse_program() {
                 # Store array metadata
                 local array_type="numeric"
                 [[ -n "$is_string" ]] && array_type="string"
+                # Include $ in array name for string arrays for consistency
+                [[ -n "$is_string" ]] && array_name="${array_name}$"
                 ARRAYS[$array_name]="$array_type:$size"
                 
                 debug "DIM: $array_name($size) - $array_type"
