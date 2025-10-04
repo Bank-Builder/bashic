@@ -134,8 +134,8 @@ execute_let() {
         
         debug "Set $array_name($index) = $value"
         
-    # Handle regular variable assignment: VARNAME = VALUE
-    elif [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*\$?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+    # Handle regular variable assignment: VARNAME = VALUE or VARNAME% = VALUE
+    elif [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*\$?%?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
         local var_name="${BASH_REMATCH[1]}"
         local value="${BASH_REMATCH[2]}"
         
@@ -143,6 +143,10 @@ execute_let() {
         
         if [[ "$var_name" =~ \$$ ]]; then
             STRING_VARS["$var_name"]="$value"
+        elif [[ "$var_name" =~ %$ ]]; then
+            # Integer variable - truncate to integer
+            value=$(printf "%.0f" "$value" 2>/dev/null || echo "0")
+            NUMERIC_VARS["$var_name"]="$value"
         else
             NUMERIC_VARS["$var_name"]="$value"
         fi
@@ -436,7 +440,8 @@ execute_statement() {
         *)
             # Check if it's an assignment without LET
             # Pattern: VARNAME[$(INDEX)] = VALUE or VARNAME = VALUE
-            local assign_regex='^[A-Z][A-Z0-9_]*(\$\([^)]+\)|[A-Z0-9_]*|\$|\([^)]+\))?[[:space:]]*='
+            # Also support integer variables with % suffix: VARNAME% = VALUE
+            local assign_regex='^[A-Z][A-Z0-9_]*(\$\([^)]+\)|[A-Z0-9_]*|\$|\([^)]+\)|%)?[[:space:]]*='
             debug "Checking assignment regex against: $stmt"
             if [[ "$stmt" =~ $assign_regex ]]; then
                 execute_let "$stmt"

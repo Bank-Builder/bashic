@@ -21,6 +21,7 @@ BASHIC is a BASIC interpreter implemented entirely in bash, designed to be compa
 - Integer: -2147483648 to 2147483647
 - Floating point: Limited precision (bash arithmetic)
 - Variable names: A-Z, A-Z followed by digits or single $
+- Integer variables: Variable names ending with % (e.g., A%, COUNT%)
 
 #### String Variables
 - Variable names end with $ (e.g., A$, NAME$)
@@ -34,7 +35,14 @@ BASHIC is a BASIC interpreter implemented entirely in bash, designed to be compa
 A = 10
 B% = 15        ' Integer variable
 PI = 3.14159
+COUNT% = 100   ' Integer variable
 ```
+
+#### Integer Variables
+- Declared with `%` suffix (e.g., `A%`, `COUNT%`, `NUMWORDS%`)
+- Automatically truncated to integer values
+- Used for array dimensions, counters, and integer arithmetic
+- Compatible with classic BASIC integer variable syntax
 
 #### String Variables
 ```basic

@@ -35,8 +35,8 @@ evaluate_expression() {
         return
     fi
     
-    # Handle numeric variables
-    if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
+    # Handle numeric variables (including integer variables with % suffix)
+    if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*%?$ ]]; then
         local var_name="$expr"
         echo "${NUMERIC_VARS[$var_name]:-0}"
         return
