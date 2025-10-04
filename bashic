@@ -270,7 +270,78 @@ evaluate_expression() {
         return
     fi
     
-    # Handle array access
+    # Handle function calls (check before array access)
+    local func_regex='^([A-Z]+)\(([^)]*)\)$'
+    if [[ "$expr" =~ $func_regex ]]; then
+        local func="${BASH_REMATCH[1]}"
+        local arg="${BASH_REMATCH[2]}"
+        
+        # Check if it's a known function (not an array)
+        case "$func" in
+            "ABS")
+                arg=$(evaluate_expression "$arg")
+                math_abs "$arg"
+                return
+                ;;
+            "INT")
+                arg=$(evaluate_expression "$arg")
+                math_int "$arg"
+                return
+                ;;
+            "SGN")
+                arg=$(evaluate_expression "$arg")
+                math_sgn "$arg"
+                return
+                ;;
+            "SQR")
+                arg=$(evaluate_expression "$arg")
+                math_sqr "$arg"
+                return
+                ;;
+            "LEN")
+                arg=$(evaluate_expression "$arg")
+                str_len "$arg"
+                return
+                ;;
+            "LEFT$")
+                if [[ "$arg" =~ ^([^,]+),([^,]+)$ ]]; then
+                    local str_arg="${BASH_REMATCH[1]}"
+                    local len_arg="${BASH_REMATCH[2]}"
+                    str_arg=$(evaluate_expression "$str_arg")
+                    len_arg=$(evaluate_expression "$len_arg")
+                    str_left "$str_arg" "$len_arg"
+                    return
+                fi
+                ;;
+            "RIGHT$")
+                if [[ "$arg" =~ ^([^,]+),([^,]+)$ ]]; then
+                    local str_arg="${BASH_REMATCH[1]}"
+                    local len_arg="${BASH_REMATCH[2]}"
+                    str_arg=$(evaluate_expression "$str_arg")
+                    len_arg=$(evaluate_expression "$len_arg")
+                    str_right "$str_arg" "$len_arg"
+                    return
+                fi
+                ;;
+            "MID$")
+                if [[ "$arg" =~ ^([^,]+),([^,]+),([^,]+)$ ]]; then
+                    local str_arg="${BASH_REMATCH[1]}"
+                    local start_arg="${BASH_REMATCH[2]}"
+                    local len_arg="${BASH_REMATCH[3]}"
+                    str_arg=$(evaluate_expression "$str_arg")
+                    start_arg=$(evaluate_expression "$start_arg")
+                    len_arg=$(evaluate_expression "$len_arg")
+                    str_mid "$str_arg" "$start_arg" "$len_arg"
+                    return
+                fi
+                ;;
+            *)
+                # Not a known function, might be an array - fall through to array handling
+                ;;
+        esac
+    fi
+    
+    # Handle array access (after function calls)
     local array_regex='^([A-Z][A-Z0-9]*)\(([^)]+)\)$'
     if [[ "$expr" =~ $array_regex ]]; then
         local array_name="${BASH_REMATCH[1]}"
@@ -326,69 +397,6 @@ evaluate_expression() {
             "-") echo "$((left - right))" ;;
             "*") echo "$((left * right))" ;;
             "/") echo "$((left / right))" ;;
-        esac
-        return
-    fi
-    
-    # Handle function calls
-    local func_regex='^([A-Z]+)\(([^)]*)\)$'
-    if [[ "$expr" =~ $func_regex ]]; then
-        local func="${BASH_REMATCH[1]}"
-        local arg="${BASH_REMATCH[2]}"
-        
-        case "$func" in
-            "ABS")
-                arg=$(evaluate_expression "$arg")
-                math_abs "$arg"
-                ;;
-            "INT")
-                arg=$(evaluate_expression "$arg")
-                math_int "$arg"
-                ;;
-            "SGN")
-                arg=$(evaluate_expression "$arg")
-                math_sgn "$arg"
-                ;;
-            "SQR")
-                arg=$(evaluate_expression "$arg")
-                math_sqr "$arg"
-                ;;
-            "LEN")
-                arg=$(evaluate_expression "$arg")
-                str_len "$arg"
-                ;;
-            "LEFT$")
-                if [[ "$arg" =~ ^([^,]+),([^,]+)$ ]]; then
-                    local str_arg="${BASH_REMATCH[1]}"
-                    local len_arg="${BASH_REMATCH[2]}"
-                    str_arg=$(evaluate_expression "$str_arg")
-                    len_arg=$(evaluate_expression "$len_arg")
-                    str_left "$str_arg" "$len_arg"
-                fi
-                ;;
-            "RIGHT$")
-                if [[ "$arg" =~ ^([^,]+),([^,]+)$ ]]; then
-                    local str_arg="${BASH_REMATCH[1]}"
-                    local len_arg="${BASH_REMATCH[2]}"
-                    str_arg=$(evaluate_expression "$str_arg")
-                    len_arg=$(evaluate_expression "$len_arg")
-                    str_right "$str_arg" "$len_arg"
-                fi
-                ;;
-            "MID$")
-                if [[ "$arg" =~ ^([^,]+),([^,]+),([^,]+)$ ]]; then
-                    local str_arg="${BASH_REMATCH[1]}"
-                    local start_arg="${BASH_REMATCH[2]}"
-                    local len_arg="${BASH_REMATCH[3]}"
-                    str_arg=$(evaluate_expression "$str_arg")
-                    start_arg=$(evaluate_expression "$start_arg")
-                    len_arg=$(evaluate_expression "$len_arg")
-                    str_mid "$str_arg" "$start_arg" "$len_arg"
-                fi
-                ;;
-            *)
-                error "Unknown function: $func"
-                ;;
         esac
         return
     fi
