@@ -4,7 +4,12 @@ A complete BASIC interpreter written entirely in bash, compatible with classic D
 
 ## Overview
 
-BASHIC is a text-mode BASIC interpreter that runs .bas files using only bash shell capabilities. No external dependencies required.
+BASHIC is a text-mode BASIC interpreter that runs .bas files using bash shell capabilities with minimal external dependencies.
+
+## Dependencies
+
+- `bash` (shell interpreter)
+- `bc` (basic calculator for mathematical functions)
 
 ## Usage
 

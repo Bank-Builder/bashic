@@ -20,10 +20,26 @@ PROGRAM_COUNTER=0
 RUNNING=false
 DEBUG=false
 
-# Error handling
-error() {
-    echo "ERROR: $1" >&2
+# Error handling with context
+error_with_context() {
+    local message="$1"
+    local context=""
+    
+    if [[ $CURRENT_LINE -gt 0 ]]; then
+        context=" (line $CURRENT_LINE"
+        if [[ -n "${PROGRAM_LINES[$CURRENT_LINE]:-}" ]]; then
+            context="$context: ${PROGRAM_LINES[$CURRENT_LINE]}"
+        fi
+        context="$context)"
+    fi
+    
+    echo "ERROR: $message$context" >&2
     exit 1
+}
+
+# Legacy error function for backward compatibility
+error() {
+    error_with_context "$1"
 }
 
 # Usage information
@@ -79,6 +95,60 @@ debug() {
     fi
 }
 
+# Pre-parse program to extract DIM statements and validate array bounds
+pre_parse_program() {
+    debug "Pre-parsing program for array declarations"
+    
+    # Ensure ARRAYS array is initialized
+    if [[ -z "${ARRAYS:-}" ]]; then
+        declare -A ARRAYS
+    fi
+    
+    local line_num
+    local line_content
+    
+    while read -r line_num; do
+        line_content="${PROGRAM_LINES[$line_num]}"
+        
+        # Check for DIM statements
+        if [[ "$line_content" =~ ^DIM[[:space:]]+(.*)$ ]]; then
+            local dim_stmt="${BASH_REMATCH[1]}"
+            dim_stmt=$(trim "$dim_stmt")
+            
+            if [[ "$dim_stmt" =~ ^([A-Z][A-Z0-9_]*\$?)\(([0-9]+)\)$ ]]; then
+                local var_name="${BASH_REMATCH[1]}"
+                local array_size="${BASH_REMATCH[2]}"
+                
+                # Validate array size
+                if [[ $array_size -lt 0 ]]; then
+                    error "Line $line_num: Array size cannot be negative: $var_name($array_size)"
+                fi
+                
+                if [[ $array_size -gt 10000 ]]; then
+                    error "Line $line_num: Array size too large (max 10000): $var_name($array_size)"
+                fi
+                
+                # Store array metadata
+                if [[ "$var_name" =~ \$$ ]]; then
+                    ARRAYS["$var_name"]="string:$array_size"
+                else
+                    ARRAYS["$var_name"]="numeric:$array_size"
+                fi
+                
+                debug "Pre-parsed DIM $var_name($array_size)"
+            else
+                error "Line $line_num: Invalid DIM statement: $dim_stmt"
+            fi
+        fi
+    done < <(get_line_numbers)
+    
+    local array_count=0
+    if [[ -n "${ARRAYS:-}" ]]; then
+        array_count=${#ARRAYS[@]}
+    fi
+    debug "Pre-parsing completed: $array_count arrays declared"
+}
+
 # Load BASIC program from file
 load_program() {
     local file="$1"
@@ -114,6 +184,9 @@ load_program() {
     fi
     
     debug "Loaded ${#PROGRAM_LINES[@]} program lines"
+    
+    # Pre-parse program to extract DIM statements
+    pre_parse_program
 }
 
 # Get sorted line numbers
@@ -243,7 +316,7 @@ str_val() {
     fi
 }
 
-# Evaluate expression (simplified)
+# Evaluate expression (optimized with single regex pattern)
 evaluate_expression() {
     local expr="$1"
     expr=$(trim "$expr")
@@ -267,6 +340,12 @@ evaluate_expression() {
     if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
         local var_name="$expr"
         echo "${NUMERIC_VARS[$var_name]:-0}"
+        return
+    fi
+    
+    # Handle numeric literals
+    if is_numeric "$expr"; then
+        echo "$expr"
         return
     fi
     
@@ -387,12 +466,6 @@ evaluate_expression() {
         else
             echo "${NUMERIC_VARS[$element_name]:-0}"
         fi
-        return
-    fi
-    
-    # Handle numeric literals
-    if is_numeric "$expr"; then
-        echo "$expr"
         return
     fi
     
@@ -547,26 +620,14 @@ execute_let() {
     fi
 }
 
-# Execute DIM statement
+# Execute DIM statement (arrays already declared in pre-parsing)
 execute_dim() {
     local stmt="$1"
     stmt=$(trim "$stmt")
     
-    if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*\$?)\(([0-9]+)\)$ ]]; then
-        local var_name="${BASH_REMATCH[1]}"
-        local array_size="${BASH_REMATCH[2]}"
-        
-        # Store array metadata
-        if [[ "$var_name" =~ \$$ ]]; then
-            ARRAYS["$var_name"]="string:$array_size"
-        else
-            ARRAYS["$var_name"]="numeric:$array_size"
-        fi
-        
-        debug "DIM $var_name($array_size)"
-    else
-        error "Invalid DIM statement: $stmt"
-    fi
+    # Arrays are already declared during pre-parsing
+    # This function exists for compatibility but does nothing
+    debug "DIM statement already processed during pre-parsing: $stmt"
 }
 
 # Execute FOR statement
@@ -587,7 +648,7 @@ execute_for() {
         NUMERIC_VARS["$var_name"]="$start_val"
         
         # Push FOR loop info onto stack
-        FOR_STACK+=("$var_name:$end_val:$step_val:$CURRENT_LINE")
+        stack_push FOR_STACK "$var_name:$end_val:$step_val:$CURRENT_LINE"
         
         debug "FOR $var_name = $start_val TO $end_val STEP $step_val"
     else
@@ -629,10 +690,28 @@ execute_next() {
         debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $for_line"
     else
         # Pop FOR stack and continue
-        unset FOR_STACK[-1]
-        FOR_STACK=("${FOR_STACK[@]}")
+        stack_pop FOR_STACK >/dev/null
         debug "NEXT: End loop, $var_name = $new_val"
     fi
+}
+
+# Generic stack management functions
+stack_push() {
+    local -n stack_ref="$1"
+    local value="$2"
+    stack_ref+=("$value")
+}
+
+stack_pop() {
+    local -n stack_ref="$1"
+    if [[ ${#stack_ref[@]} -eq 0 ]]; then
+        return 1
+    fi
+    local last_index=$((${#stack_ref[@]} - 1))
+    local value="${stack_ref[$last_index]}"
+    unset stack_ref[$last_index]
+    stack_ref=("${stack_ref[@]}")
+    echo "$value"
 }
 
 # Evaluate a single condition (shared helper for IF and WHILE)
@@ -710,7 +789,7 @@ execute_while() {
     
     # Store the condition and current line for the loop
     # Push WHILE loop info onto stack: "condition:line_num"
-    WHILE_STACK+=("$stmt:$CURRENT_LINE")
+    stack_push WHILE_STACK "$stmt:$CURRENT_LINE"
     
     debug "WHILE $stmt"
 }
@@ -737,8 +816,7 @@ execute_wend() {
         debug "WEND: Continue loop, jumping to line $while_line"
     else
         # Pop WHILE stack and continue (same pattern as FOR/NEXT)
-        unset WHILE_STACK[-1]
-        WHILE_STACK=("${WHILE_STACK[@]}")
+        stack_pop WHILE_STACK >/dev/null
         debug "WEND: End loop"
     fi
 }
@@ -802,7 +880,7 @@ execute_gosub() {
     
     # Push return address onto stack
     local next_line=$(find_next_line "$CURRENT_LINE")
-    GOSUB_STACK+=("$next_line")
+    stack_push GOSUB_STACK "$next_line"
     
     CURRENT_LINE="$line_num"
     debug "GOSUB to line $line_num, return to $next_line"
@@ -810,13 +888,10 @@ execute_gosub() {
 
 # Execute RETURN statement
 execute_return() {
-    if [[ ${#GOSUB_STACK[@]} -eq 0 ]]; then
+    local return_line=$(stack_pop GOSUB_STACK)
+    if [[ $? -ne 0 ]]; then
         error "RETURN without GOSUB"
     fi
-    
-    local return_line="${GOSUB_STACK[-1]}"
-    unset GOSUB_STACK[-1]
-    GOSUB_STACK=("${GOSUB_STACK[@]}")
     
     CURRENT_LINE="$return_line"
     debug "RETURN to line $return_line"

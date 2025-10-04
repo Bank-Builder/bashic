@@ -5,23 +5,7 @@ This code review focuses on functional implementation improvements for the BASHI
 
 ## Critical Issues
 
-### 1. External Dependency Violation
-**Location**: Lines 156, 182-183, 183
-**Issue**: Uses `bc` command which violates "bash only" requirement
-```bash
-# Line 156: math_abs()
-if [[ $(echo "$n < 0" | bc -l 2>/dev/null || echo "0") == "1" ]]; then
-    echo "$n * -1" | bc -l 2>/dev/null || echo "${n#-}"
-
-# Line 183: math_sqr() 
-if command -v bc >/dev/null 2>&1; then
-    echo "sqrt($n)" | bc -l
-```
-
-**Impact**: Violates core project requirement of "bash only"
-**Fix**: Replace with pure bash arithmetic and algorithms
-
-### 2. Inconsistent Error Handling
+### 1. Inconsistent Error Handling
 **Location**: Throughout codebase
 **Issue**: Some functions use `error()` (exits program), others return empty/default values
 ```bash
@@ -35,7 +19,7 @@ error "Array not declared: $array_name"
 **Impact**: Inconsistent behavior makes debugging difficult
 **Fix**: Establish consistent error handling strategy
 
-### 3. Array Stack Management Bug
+### 2. Array Stack Management Bug
 **Location**: Lines 632-633, 740-741
 **Issue**: Incorrect array element removal
 ```bash
@@ -53,7 +37,7 @@ WHILE_STACK=("${WHILE_STACK[@]}")
 
 ## Performance Issues
 
-### 4. Inefficient Expression Evaluation
+### 3. Inefficient Expression Evaluation
 **Location**: Lines 274-357
 **Issue**: Multiple regex matches for same expression
 ```bash
@@ -64,7 +48,7 @@ WHILE_STACK=("${WHILE_STACK[@]}")
 **Impact**: O(n) complexity for each expression evaluation
 **Fix**: Use single regex with capture groups for all patterns
 
-### 5. Redundant String Operations
+### 4. Redundant String Operations
 **Location**: Lines 648-649, 404-407
 **Issue**: Multiple `trim()` calls on same values
 ```bash
@@ -75,7 +59,7 @@ right=$(evaluate_expression "$(trim "$right")")
 **Impact**: Unnecessary string processing overhead
 **Fix**: Trim once at expression entry point
 
-### 6. Inefficient Line Number Lookup
+### 5. Inefficient Line Number Lookup
 **Location**: Lines 125-137
 **Issue**: `find_next_line()` sorts all line numbers for each lookup
 ```bash
@@ -92,7 +76,7 @@ done < <(get_line_numbers)  # Sorts every time
 
 ## Code Quality Issues
 
-### 7. Magic Numbers and Hardcoded Values
+### 6. Magic Numbers and Hardcoded Values
 **Location**: Lines 220, 379, 517
 **Issue**: Hardcoded array bounds and limits
 ```bash
@@ -103,7 +87,7 @@ if [[ $index -lt 0 || $index -gt $array_size ]]; then
 **Impact**: Difficult to maintain and modify
 **Fix**: Define constants for array bounds and indexing
 
-### 8. Inconsistent Variable Naming
+### 7. Inconsistent Variable Naming
 **Location**: Throughout codebase
 **Issue**: Mixed naming conventions
 ```bash
@@ -115,7 +99,7 @@ local array_name        # snake_case
 **Impact**: Reduces code readability
 **Fix**: Establish consistent naming convention
 
-### 9. Duplicate Code Patterns
+### 8. Duplicate Code Patterns
 **Location**: Lines 632-633, 740-741, 818-819
 **Issue**: Identical stack management code
 ```bash
@@ -137,7 +121,7 @@ GOSUB_STACK=("${GOSUB_STACK[@]}")
 
 ## Robustness Issues
 
-### 10. Insufficient Input Validation
+### 9. Insufficient Input Validation
 **Location**: Lines 555-570
 **Issue**: DIM statement validation too permissive
 ```bash
@@ -149,7 +133,7 @@ if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*\$?)\(([0-9]+)\)$ ]]; then
 **Impact**: Allows invalid array sizes (e.g., negative, too large)
 **Fix**: Add bounds checking for array sizes
 
-### 11. Missing Overflow Protection
+### 10. Missing Overflow Protection
 **Location**: Lines 615-616, 424-429
 **Issue**: No protection against integer overflow
 ```bash
@@ -160,7 +144,7 @@ echo "$((left + right))"
 **Impact**: Silent overflow can cause incorrect behavior
 **Fix**: Add overflow detection and handling
 
-### 12. Incomplete Error Context
+### 11. Incomplete Error Context
 **Location**: Lines 24-26
 **Issue**: Error messages lack context (line numbers, variable values)
 ```bash
@@ -175,19 +159,19 @@ error() {
 
 ## Maintainability Issues
 
-### 13. Large Function Complexity
+### 12. Large Function Complexity
 **Location**: Lines 247-435
 **Issue**: `evaluate_expression()` function is 188 lines long
 **Impact**: Difficult to test, debug, and maintain
 **Fix**: Break into smaller, focused functions
 
-### 14. Mixed Responsibilities
+### 13. Mixed Responsibilities
 **Location**: Lines 437-488
 **Issue**: `execute_print()` handles both parsing and output formatting
 **Impact**: Violates single responsibility principle
 **Fix**: Separate parsing from output formatting
 
-### 15. Inconsistent Debug Output
+### 14. Inconsistent Debug Output
 **Location**: Throughout codebase
 **Issue**: Some functions have debug output, others don't
 **Impact**: Inconsistent debugging experience
@@ -195,7 +179,7 @@ error() {
 
 ## Security Considerations
 
-### 16. Potential Code Injection
+### 15. Potential Code Injection
 **Location**: Lines 156, 183
 **Issue**: Uses `bc` with user input
 ```bash
