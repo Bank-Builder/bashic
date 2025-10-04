@@ -509,14 +509,14 @@ evaluate_expression() {
     # Handle string concatenation (+ operator) with proper quote handling
     # Find the + operator that's outside quotes
     local i=0
-    local in_quotes=false
+    local in_quotes=0
     local plus_pos=-1
     
     while [[ $i -lt ${#expr} ]]; do
         local char="${expr:$i:1}"
         if [[ "$char" == "\"" ]]; then
             in_quotes=$((!in_quotes))
-        elif [[ "$char" == "+" && "$in_quotes" == "false" ]]; then
+        elif [[ "$char" == "+" && $in_quotes -eq 0 ]]; then
             plus_pos=$i
             break
         fi
