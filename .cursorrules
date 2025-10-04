@@ -1,0 +1,76 @@
+# BASHIC Project Cursor Rules
+
+## Git Workflow Shortcuts
+- `.` = `git add .` - Stage all changes
+- `..` = `git commit -m "quick commit"` - Quick commit with generic message  
+- `++` = `git push` - Push to remote
+
+## Commit Guidelines
+- Always commit BEFORE making changes
+- Keep commit messages very short (under 50 chars)
+- Use imperative mood: "fix", "add", "update", not "fixed", "added", "updated"
+- No emojis, em-dashes, or non-ASCII characters anywhere
+- Commit frequently between logical changes
+
+## Code Standards
+- Bash only - no external dependencies
+- Use `set -euo pipefail` for strict error handling
+- Functions should be small and focused
+- Use meaningful variable names
+- Add debug statements for complex logic
+- Test each module/segment when modifying code
+- Don't modify large sections at once - make incremental changes
+
+## Documentation Rules  
+- No emojis or special characters in docs
+- Use plain ASCII text only
+- Keep documentation concise and practical
+- Update TODO.md for any new tasks or issues found
+- Document known limitations clearly
+
+## Testing Requirements
+- Test code after each change
+- Run test programs (test1.bas, test2.bas) after interpreter changes
+- Don't iterate more than twice on solving a problem - stop and ask for guidance
+- Create test cases for new features
+
+## File Organization
+- Keep project structure clean
+- Use clear directory hierarchy
+- Name files descriptively
+- Group related functionality
+
+## Development Process
+- Plan changes in small steps
+- Commit before starting work
+- Test immediately after changes
+- Update documentation as needed
+- Don't add unnecessary complexity
+
+## Efficiency Guidelines
+- Use parallel operations when possible
+- Prefer built-in bash features over external tools
+- Optimize for readability over cleverness
+- Cache results when appropriate
+- Avoid redundant operations
+
+## Error Handling
+- Provide clear error messages with context
+- Include line numbers in interpreter errors when possible
+- Handle edge cases gracefully
+- Validate inputs early
+- Use consistent error reporting format
+
+## Performance Considerations
+- Profile regex patterns for efficiency
+- Minimize subprocess calls
+- Use bash arrays effectively
+- Avoid deep recursion
+- Monitor memory usage for large programs
+
+## Security Guidelines
+- Validate all user input
+- Sanitize file paths
+- Use quotes around variables
+- Avoid eval and similar dangerous constructs
+- Check file permissions before operations

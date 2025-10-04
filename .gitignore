@@ -1,10 +1,46 @@
-# Compiled files
+# Bash project specific
 *.deb
+*.rpm
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+
+# Compiled/generated files
+bashic_*
+*.compiled
+*.o
+*.so
+*.a
 
 # Temporary files
 *~
 *.swp
+*.swo
 *.tmp
+*.temp
+.*.tmp
+.*.swp
+.*.swo
+
+# Backup files
+*.bak
+*.backup
+*.orig
+*.save
+
+# Log files
+*.log
+*.out
+*.err
+debug.txt
+trace.txt
+
+# Test files and output
+test_*
+tests/output/
+*.test
+coverage/
+.coverage
 
 # OS generated files
 .DS_Store
@@ -14,15 +50,44 @@
 .Trashes
 ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# IDE files
+# IDE and editor files
 .vscode/
 .idea/
+*.sublime-*
+.atom/
+.brackets.json
+*~
 
-# Test output
-test_output/
-*.log
+# Shell history and cache
+.bash_history
+.zsh_history
+.cache/
+.local/
 
 # Build artifacts
 build/
 dist/
+pkg/
+target/
+
+# Documentation builds
+docs/_build/
+*.pdf
+*.html
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.development
+
+# Package manager files
+node_modules/
+*.lock
+
+# Runtime files
+*.pid
+*.sock
+core.*
