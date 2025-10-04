@@ -260,6 +260,14 @@ execute_statement() {
             debug "Program ended"
             RUNNING=false
             ;;
+        KEY*|CLS|WIDTH*|LOCATE*|BEEP|RANDOMIZE*|COLOR*|SOUND*|POKE*|PEEK*|DEF*)
+            # GW-BASIC hardware/graphics commands - ignore (no-op stubs)
+            debug "Ignoring GW-BASIC command: ${upper_stmt%% *}"
+            ;;
+        DATA*|READ*|RESTORE*|ON*)
+            # GW-BASIC data/computed GOTO commands - not yet implemented
+            debug "Ignoring unimplemented command: ${upper_stmt%% *}"
+            ;;
         PRINT*)
             local args="${stmt#*PRINT}"
             execute_print "$args"
