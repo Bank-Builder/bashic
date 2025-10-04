@@ -245,8 +245,9 @@ cleanup_keyboard() {
 # Get a single character from keyboard or buffer
 get_key() {
     local char
-    if [ -t 0 ]; then
-        # Use read with timeout
+    # Check if we're in interactive mode by checking if terminal was set up
+    if [ -n "$OLD_TTY_SETTINGS" ]; then
+        # Interactive mode: use read with timeout
         IFS= read -r -n1 -t 1 char 2>/dev/null || char=""
     else
         # Non-interactive mode: check if we have buffered input
