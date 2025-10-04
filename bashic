@@ -396,7 +396,21 @@ evaluate_expression() {
         return
     fi
     
-    # Handle simple arithmetic (very basic)
+    # Handle MOD operator (word-based operator)
+    if [[ "$expr" =~ ^([A-Z0-9_]+)\ +MOD\ +([A-Z0-9_]+)$ ]]; then
+        local left="${BASH_REMATCH[1]}"
+        local right="${BASH_REMATCH[2]}"
+        
+        left=$(trim "$left")
+        right=$(trim "$right")
+        left=$(evaluate_expression "$left")
+        right=$(evaluate_expression "$right")
+        
+        echo "$((left % right))"
+        return
+    fi
+    
+    # Handle simple arithmetic (symbol-based operators)
     if [[ "$expr" =~ ^([A-Z0-9_]+)\ *(\+|\-|\*|/)\ *([A-Z0-9_]+)$ ]]; then
         local left="${BASH_REMATCH[1]}"
         local op="${BASH_REMATCH[2]}"
