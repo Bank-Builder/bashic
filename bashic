@@ -335,6 +335,21 @@ evaluate_expression() {
                     return
                 fi
                 ;;
+            "ASC")
+                arg=$(evaluate_expression "$arg")
+                str_asc "$arg"
+                return
+                ;;
+            "CHR$")
+                arg=$(evaluate_expression "$arg")
+                str_chr "$arg"
+                return
+                ;;
+            "VAL")
+                arg=$(evaluate_expression "$arg")
+                str_val "$arg"
+                return
+                ;;
             *)
                 # Not a known function, might be an array - fall through to array handling
                 ;;
@@ -419,6 +434,14 @@ execute_print() {
     local no_newline=false
     
     # Simple parsing - handle comma and semicolon separated values
+    # For single expressions, just evaluate directly
+    if [[ "$args" != *","* && "$args" != *";"* ]]; then
+        local value=$(evaluate_expression "$args")
+        echo -e "$value"
+        return
+    fi
+    
+    # For multiple expressions, use simple regex (function calls with commas need assignment)
     while [[ -n "$args" ]]; do
         args=$(trim "$args")
         
