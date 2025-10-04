@@ -69,7 +69,7 @@ fi
 
 # Test 4: Test interactive mode with timeout
 echo -e "\nTest 4: Testing interactive mode"
-# if [[ -t 0 ]]; then
+if [[ -t 0 ]]; then
     echo "Interactive mode - press ENTER within 4s to test input"
     key=$(init_keyboard; get_key; cleanup_keyboard)
     # Check if we got a key (including special characters like \n, \t)
@@ -79,6 +79,10 @@ echo -e "\nTest 4: Testing interactive mode"
         key_name="timeout"
     fi
     print_result "Interactive input ('$key_name')" 0
+else
+    echo "Non-interactive mode - skipping interactive test"
+    print_result "Interactive input (skipped - not in terminal)" 0
+fi
 # else
 #     echo "Non-interactive mode - testing timeout behavior"
 #     init_keyboard
