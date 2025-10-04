@@ -1058,7 +1058,7 @@ execute_for() {
     local stmt="${1:-}"
     stmt=$(trim "$stmt")
     
-    if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
+    if [[ "$stmt" =~ ^([A-Za-z][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
         local var_name="${BASH_REMATCH[1]}"
         local start_val="${BASH_REMATCH[2]}"
         local end_val="${BASH_REMATCH[3]}"
@@ -1098,15 +1098,41 @@ execute_next() {
     
     # Get current variable value and increment
     local current_val="${NUMERIC_VARS[$var_name]}"
-    local new_val=$((current_val + step_val))
+    
+    # Check if we need floating point arithmetic
+    if [[ "$current_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
+        # Use bc for floating point arithmetic
+        local new_val=$(echo "scale=10; $current_val + $step_val" | bc -l)
+        # Remove trailing zeros and decimal point if not needed
+        new_val=$(echo "$new_val" | sed 's/\.0*$//')
+    else
+        # Use bash arithmetic for integers
+        local new_val=$((current_val + step_val))
+    fi
+    
     NUMERIC_VARS["$var_name"]="$new_val"
     
     # Check if loop should continue
     local continue_loop=false
-    if [[ $step_val -gt 0 ]]; then
-        [[ $new_val -le $end_val ]] && continue_loop=true
+    
+    # Check if we need floating point comparison
+    if [[ "$new_val" =~ \. ]] || [[ "$end_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
+        # Use bc for floating point comparison
+        local step_positive=$(echo "$step_val > 0" | bc -l)
+        if [[ "$step_positive" == "1" ]]; then
+            local result=$(echo "$new_val <= $end_val" | bc -l)
+            [[ "$result" == "1" ]] && continue_loop=true
+        else
+            local result=$(echo "$new_val >= $end_val" | bc -l)
+            [[ "$result" == "1" ]] && continue_loop=true
+        fi
     else
-        [[ $new_val -ge $end_val ]] && continue_loop=true
+        # Use bash arithmetic for integer comparison
+        if [[ $step_val -gt 0 ]]; then
+            [[ $new_val -le $end_val ]] && continue_loop=true
+        else
+            [[ $new_val -ge $end_val ]] && continue_loop=true
+        fi
     fi
     
     if [[ "$continue_loop" == "true" ]]; then
@@ -1556,6 +1582,50 @@ execute_restore() {
         debug "RESTORE: Data pointer set to $found_pos"
     fi
 }
+execute_screen() {
+    local mode="${1:-0}"
+    mode=$(trim "$mode")
+    
+    # Evaluate mode if it's an expression
+    local screen_mode=$(evaluate_expression "$mode")
+    
+    debug "SCREEN: Setting display mode to $screen_mode"
+    
+    case "$screen_mode" in
+        0)
+            # Text mode (80x25) - default terminal mode
+            SCREEN_WIDTH=80
+            debug "SCREEN 0: Text mode (80x25)"
+            ;;
+        1)
+            # Medium resolution graphics (320x200) - simulate with wider terminal
+            SCREEN_WIDTH=80  # Keep reasonable width for terminal
+            debug "SCREEN 1: Medium resolution graphics mode (simulated)"
+            ;;
+        2)
+            # High resolution graphics (640x200) - simulate with wider terminal
+            SCREEN_WIDTH=80  # Keep reasonable width for terminal
+            debug "SCREEN 2: High resolution graphics mode (simulated)"
+            ;;
+        3)
+            # Extended text mode (80x25) - same as mode 0
+            SCREEN_WIDTH=80
+            debug "SCREEN 3: Extended text mode (80x25)"
+            ;;
+        4)
+            # Very high resolution (640x400) - simulate with wider terminal
+            SCREEN_WIDTH=80  # Keep reasonable width for terminal
+            debug "SCREEN 4: Very high resolution graphics mode (simulated)"
+            ;;
+        *)
+            debug "SCREEN $screen_mode: Unknown mode, defaulting to text mode"
+            SCREEN_WIDTH=80
+            ;;
+    esac
+    
+    # Clear screen when changing modes (like GW-BASIC)
+    screen_cls
+}
 execute_randomize() {
     local stmt="${1:-}"
     stmt=$(trim "$stmt")
@@ -1622,6 +1692,11 @@ execute_statement() {
             if [[ "$args" =~ ^([0-9]+) ]]; then
                 screen_width "${BASH_REMATCH[1]}"
             fi
+            ;;
+        SCREEN*)
+            local args="${stmt#*SCREEN}"
+            args=$(trim "$args")
+            execute_screen "$args"
             ;;
         KEY*|SOUND*|POKE*|PEEK*|DEF*)
             # Other GW-BASIC hardware commands - ignore (no-op stubs)
