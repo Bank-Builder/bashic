@@ -598,6 +598,63 @@ execute_next() {
     fi
 }
 
+# Execute WHILE statement
+execute_while() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    # Store the condition and current line for the loop
+    # Push WHILE loop info onto stack: "condition:line_num"
+    WHILE_STACK+=("$stmt:$CURRENT_LINE")
+    
+    debug "WHILE $stmt"
+}
+
+# Execute WEND statement  
+execute_wend() {
+    local stmt="$1"
+    
+    if [[ ${#WHILE_STACK[@]} -eq 0 ]]; then
+        error "WEND without WHILE"
+    fi
+    
+    local while_info="${WHILE_STACK[-1]}"
+    local condition="${while_info%:*}"
+    local while_line="${while_info#*:}"
+    
+    # Evaluate the WHILE condition (reusing same logic as IF statement)
+    local result=false
+    if [[ "$condition" =~ ^([^<>=!]+)[[:space:]]*([<>=!]+)[[:space:]]*(.+)$ ]]; then
+        local left="${BASH_REMATCH[1]}"
+        local op="${BASH_REMATCH[2]}"
+        local right="${BASH_REMATCH[3]}"
+        
+        left=$(evaluate_expression "$left")
+        right=$(evaluate_expression "$right")
+        
+        case "$op" in
+            "=")  [[ "$left" == "$right" ]] && result=true ;;
+            "<>") [[ "$left" != "$right" ]] && result=true ;;
+            "<")  [[ $left -lt $right ]] && result=true ;;
+            ">")  [[ $left -gt $right ]] && result=true ;;
+            "<=") [[ $left -le $right ]] && result=true ;;
+            ">=") [[ $left -ge $right ]] && result=true ;;
+        esac
+    fi
+    
+    debug "WEND: condition '$condition' evaluated to $result"
+    
+    if [[ "$result" == "true" ]]; then
+        CURRENT_LINE="$while_line"
+        debug "WEND: Continue loop, jumping to line $while_line"
+    else
+        # Pop WHILE stack and continue (same pattern as FOR/NEXT)
+        unset WHILE_STACK[-1]
+        WHILE_STACK=("${WHILE_STACK[@]}")
+        debug "WEND: End loop"
+    fi
+}
+
 # Execute IF statement
 execute_if() {
     local stmt="$1"
@@ -714,6 +771,13 @@ execute_statement() {
             ;;
         NEXT*)
             execute_next "$stmt"
+            ;;
+        WHILE*)
+            local args="${stmt#*WHILE}"
+            execute_while "$args"
+            ;;
+        WEND*)
+            execute_wend "$stmt"
             ;;
         IF*)
             local args="${stmt#*IF}"

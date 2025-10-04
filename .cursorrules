@@ -21,6 +21,13 @@
 - Test each module/segment when modifying code
 - Don't modify large sections at once - make incremental changes
 
+## Code Reuse Principles
+- MAXIMIZE code reuse - similar functionality should use identical patterns
+- Reuse existing helper functions and data structures
+- Only differ in conditional logic, not in structure
+- Follow established patterns for consistency (e.g., FOR/NEXT pattern for WHILE/WEND)
+- Abstract common operations into shared functions when possible
+
 ## Documentation Rules  
 - No emojis or special characters in docs
 - Use plain ASCII text only
