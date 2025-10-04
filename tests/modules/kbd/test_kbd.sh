@@ -73,8 +73,6 @@ if [[ -t 0 ]]; then
     echo "Interactive mode - press ENTER within 4s to test input"
     init_keyboard
     key=$(get_key)
-    # Restore terminal settings for clean output
-    cleanup_keyboard
     if [[ -n "$key" ]]; then
         # Convert special characters to readable names
         case "$key" in
@@ -85,9 +83,13 @@ if [[ -t 0 ]]; then
             $'\b') key_name="BACKSPACE" ;;
             *) key_name="$key" ;;
         esac
+        # Restore terminal settings for clean output
+        cleanup_keyboard
         echo "Key detected: '$key_name'"
         print_result "Interactive input (key: '$key_name')" 0
     else
+        # Restore terminal settings for clean output
+        cleanup_keyboard
         print_result "Interactive input (timeout)" 0
     fi
 else
