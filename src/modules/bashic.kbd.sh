@@ -47,20 +47,12 @@ get_key() {
         # local IFS=
         # local char
         
-        # Read a single character with timeout
-        read -r -n1 -t 4 char
-        local exit_code=$?
-        
-        # Debug: show what we actually got
-        printf "DEBUG: char='%q' (length=%d) exit_code=%d\n" "$char" "${#char}" "$exit_code" >&2
-        
-        # Check for timeout (no input) - but allow special characters
-        if [ $exit_code -gt 128 ]; then
+        # Read a single character with timeout using read (more reliable)
+        if read -r -n1 -t 4 char; then
+            echo -n "$char"
+        else
             echo ""
-            return
         fi
-        
-        echo -n "$char"
         
         # Print the character (since echo is off) - but skip special keys
         # case "$char" in
