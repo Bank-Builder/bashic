@@ -535,6 +535,7 @@ execute_dim() {
 # Execute FOR statement
 execute_for() {
     local stmt="$1"
+    stmt=$(trim "$stmt")
     
     if [[ "$stmt" =~ ^([A-Z][A-Z0-9]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
         local var_name="${BASH_REMATCH[1]}"
@@ -600,6 +601,7 @@ execute_next() {
 # Execute IF statement
 execute_if() {
     local stmt="$1"
+    stmt=$(trim "$stmt")
     
     if [[ "$stmt" =~ ^(.+)[[:space:]]+THEN[[:space:]]+(.*)$ ]]; then
         local condition="${BASH_REMATCH[1]}"
@@ -684,7 +686,7 @@ execute_statement() {
     # Skip empty statements and comments
     [[ -z "$stmt" ]] && return
     [[ "$stmt" =~ ^REM ]] && return
-    [[ "$stmt" =~ ^' ]] && return
+    [[ "$stmt" =~ ^\' ]] && return
     
     # Convert to uppercase for keyword matching
     local upper_stmt="${stmt^^}"
@@ -714,7 +716,8 @@ execute_statement() {
             execute_next "$stmt"
             ;;
         IF*)
-            execute_if "$stmt"
+            local args="${stmt#*IF}"
+            execute_if "$args"
             ;;
         GOTO*)
             local line_num="${stmt#*GOTO}"
