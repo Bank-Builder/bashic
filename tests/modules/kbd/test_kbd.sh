@@ -73,6 +73,8 @@ if [[ -t 0 ]]; then
     echo "Interactive mode - press ENTER within 4s to test input"
     init_keyboard
     key=$(get_key)
+    # Restore terminal settings for clean output
+    cleanup_keyboard
     if [[ -n "$key" ]]; then
         # Convert special characters to readable names
         case "$key" in
