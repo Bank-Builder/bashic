@@ -48,6 +48,9 @@ load_program() {
     DATA_ITEMS=()
     DATA_POINTER=0
     
+    # Initialize graphics buffer
+    init_graphics_buffer
+    
     # Read program lines
     while IFS= read -r line; do
         # Skip empty lines and comments

@@ -27,21 +27,19 @@ declare -a WHILE_STACK       # WHILE loop stack
 
 CURRENT_LINE=0
 PROGRAM_COUNTER=0
-BASHIC_RUNNING=false
-BASHIC_DEBUG=false
-BASHIC_INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
-BASHIC_OLD_TTY_SETTINGS=""  # Store original terminal settings
-declare -a BASHIC_DATA_ITEMS  # DATA statement items
-BASHIC_DATA_POINTER=0  # Current position in DATA_ITEMS
-declare -a BASHIC_DATA_LINES  # Line numbers containing DATA statements
-declare -a BASHIC_DATA_START_POS  # Starting position in DATA_ITEMS for each DATA line
+RUNNING=false
+DEBUG=false
+INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
+OLD_TTY_SETTINGS=""  # Store original terminal settings
+declare -a DATA_ITEMS  # DATA statement items
+DATA_POINTER=0  # Current position in DATA_ITEMS
 
 # Error handling with context
 error_with_context() {
-    local message="${1:-}"
+    local message="$1"
     local context=""
     
-    if [[ ${CURRENT_LINE:-0} -gt 0 ]]; then
+    if [[ $CURRENT_LINE -gt 0 ]]; then
         context=" (line $CURRENT_LINE"
         if [[ -n "${PROGRAM_LINES[$CURRENT_LINE]:-}" ]]; then
             context="$context: ${PROGRAM_LINES[$CURRENT_LINE]}"
@@ -49,7 +47,6 @@ error_with_context() {
         context="$context)"
     fi
     
-    log_error "$message$context"
     echo "ERROR: $message$context" >&2
     exit 1
 }
@@ -69,112 +66,16 @@ usage() {
     exit 0
 }
 
-# Log file for execution tracking - will be set based on input file
-BASHIC_LOG_FILE=""
-
-# Debug stack trace variables (separate from BASIC call stack)
-declare -a DEBUG_CALL_STACK=()
-declare -i DEBUG_STACK_DEPTH=0
-
-# Initialize log file
-init_log() {
-    echo "=== BASHIC EXECUTION LOG - $(date) ===" > "$BASHIC_LOG_FILE"
-    echo "Program: ${PROGRAM_FILE:-UNKNOWN}" >> "$BASHIC_LOG_FILE"
-    echo "=========================================" >> "$BASHIC_LOG_FILE"
-}
-
-# Push to debug call stack
-push_debug_stack() {
-    local function_name="$1"
-    local args="$2"
-    DEBUG_CALL_STACK[$DEBUG_STACK_DEPTH]="$function_name($args)"
-    DEBUG_STACK_DEPTH=$((DEBUG_STACK_DEPTH + 1))
-    log_debug_stack "ENTER: $function_name($args)"
-}
-
-# Pop from debug call stack
-pop_debug_stack() {
-    if [[ $DEBUG_STACK_DEPTH -gt 0 ]]; then
-        DEBUG_STACK_DEPTH=$((DEBUG_STACK_DEPTH - 1))
-        local function_name="${DEBUG_CALL_STACK[$DEBUG_STACK_DEPTH]%%(*}"
-        log_debug_stack "EXIT:  $function_name"
-    fi
-}
-
-# Log debug stack trace
-log_debug_stack() {
-    local message="$1"
-    local timestamp=$(date '+%H:%M:%S.%3N')
-    local indent=""
-    for ((i=0; i<DEBUG_STACK_DEPTH; i++)); do
-        indent="  $indent"
-    done
-    echo "[$timestamp] DEBUG_STACK: $indent$message" >> "$BASHIC_LOG_FILE"
-}
-
-# Log execution details
-log_execution() {
-    local message="$1"
-    local timestamp=$(date '+%H:%M:%S.%3N')
-    echo "[$timestamp] LINE $CURRENT_LINE: $message" >> "$BASHIC_LOG_FILE"
-}
-
-# Log variable values
-log_variables() {
-    local timestamp=$(date '+%H:%M:%S.%3N')
-    echo "[$timestamp] VARIABLES:" >> "$BASHIC_LOG_FILE"
-    
-    # Log numeric variables
-    for var in "${!NUMERIC_VARS[@]}"; do
-        echo "[$timestamp]   NUMERIC: $var = ${NUMERIC_VARS[$var]}" >> "$BASHIC_LOG_FILE"
-    done
-    
-    # Log string variables  
-    for var in "${!STRING_VARS[@]}"; do
-        echo "[$timestamp]   STRING:  $var = \"${STRING_VARS[$var]}\"" >> "$BASHIC_LOG_FILE"
-    done
-    
-    # Log arrays
-    for var in "${!ARRAYS[@]}"; do
-        echo "[$timestamp]   ARRAY:   $var = ${ARRAYS[$var]}" >> "$BASHIC_LOG_FILE"
-    done
-}
-
-# Log function results
-log_function_result() {
-    local function_name="$1"
-    local result="$2"
-    local timestamp=$(date '+%H:%M:%S.%3N')
-    echo "[$timestamp] RESULT: $function_name() = \"$result\"" >> "$BASHIC_LOG_FILE"
-}
-
-# Log errors
-log_error() {
-    local message="$1"
-    local timestamp=$(date '+%H:%M:%S.%3N')
-    echo "[$timestamp] ERROR: $message" >> "$BASHIC_LOG_FILE"
-    echo "[$timestamp] DEBUG_STACK_TRACE:" >> "$BASHIC_LOG_FILE"
-    for ((i=DEBUG_STACK_DEPTH-1; i>=0; i--)); do
-        local indent=""
-        for ((j=0; j<i; j++)); do
-            indent="  $indent"
-        done
-        echo "[$timestamp]   $indent${DEBUG_CALL_STACK[$i]}" >> "$BASHIC_LOG_FILE"
-    done
-}
-
 # Debug output
 debug() {
-    if [[ "$BASHIC_DEBUG" == "true" ]]; then
+    if [[ "$DEBUG" == "true" ]]; then
         echo "DEBUG: $1" >&2
     fi
-    # Also log to file
-    log_execution "DEBUG: $1"
 }
 
 # Trim whitespace from string
 trim() {
-    local str="${1:-}"
+    local str="$1"
     str="${str#"${str%%[![:space:]]*}"}"  # Remove leading whitespace
     str="${str%"${str##*[![:space:]]}"}"  # Remove trailing whitespace
     echo "$str"
@@ -182,7 +83,7 @@ trim() {
 
 # Check if string is numeric
 is_numeric() {
-    local str="${1:-}"
+    local str="$1"
     [[ "$str" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]
 }
 
@@ -246,7 +147,7 @@ stack_pop() {
 
 # Mathematical functions
 math_abs() {
-    local n="${1:-0}"
+    local n="$1"
     if [[ $(echo "$n < 0" | bc -l 2>/dev/null || echo "0") == "1" ]]; then
         echo "$n * -1" | bc -l 2>/dev/null || echo "${n#-}"
     else
@@ -255,12 +156,12 @@ math_abs() {
 }
 
 math_int() {
-    local n="${1:-0}"
+    local n="$1"
     echo "$n" | cut -d. -f1
 }
 
 math_sgn() {
-    local n="${1:-0}"
+    local n="$1"
     if [[ "$n" =~ ^-.*$ ]]; then
         echo "-1"
     elif [[ "$n" == "0" || "$n" == "0.0" ]]; then
@@ -271,7 +172,7 @@ math_sgn() {
 }
 
 math_sqr() {
-    local n="${1:-0}"
+    local n="$1"
     # Simple square root using bash arithmetic (limited precision)
     if command -v bc >/dev/null 2>&1; then
         echo "sqrt($n)" | bc -l
@@ -288,7 +189,7 @@ math_sqr() {
 }
 
 math_rnd() {
-    local n="${1:-1}"
+    local n="$1"
     # Random number between 0 and 1
     # Use RANDOM (0-32767) and scale to 0-1
     local result=$(echo "scale=6; $RANDOM / 32767" | bc -l 2>/dev/null || echo "0.$RANDOM")
@@ -307,56 +208,16 @@ math_rnd() {
 # Global variables for keyboard input
 BASHIC_INKEY_BUFFER=""  # Buffer for non-interactive input
 BASHIC_TTY_SETTINGS=""  # Store original terminal settings
-BASHIC_INKEY_SEMAPHORE=0  # Semaphore counter for INKEY$ (0 = available, >0 = busy)
-BASHIC_INKEY_TIMEOUT=1  # Default timeout for INKEY$ (1 second)
 
 # Initialize keyboard handling
 init_keyboard() {
-    # Check if we're in a terminal - try multiple methods
-    local is_terminal=false
-    
-    # Method 1: Check if stdin is a terminal
+    # Save current terminal settings and check if we're in a terminal
     if [ -t 0 ]; then
-        is_terminal=true
-    fi
-    
-    # Method 2: Check if we have a controlling terminal
-    if [ -t 1 ] && [ -c /dev/tty ]; then
-        is_terminal=true
-    fi
-    
-    # Method 3: Check if TERM environment variable is set AND stdin is a terminal
-    # Only consider it a terminal if stdin is actually connected to a terminal
-    if [ -n "$TERM" ] && [ -t 0 ]; then
-        is_terminal=true
-    fi
-    
-    # Force interactive mode for testing
-    if [ "${BASHIC_FORCE_INTERACTIVE:-}" = "true" ]; then
-        debug "Forcing interactive mode via BASHIC_FORCE_INTERACTIVE"
-        is_terminal=true
-    fi
-    
-    if [ "$is_terminal" = true ]; then
-        debug "Terminal detected - setting up interactive mode"
-        # Try to get TTY settings, but don't fail if stty doesn't work
-        BASHIC_TTY_SETTINGS=$(stty -g 2>/dev/null || echo "raw")
-        debug "stty -g returned: '$BASHIC_TTY_SETTINGS'"
-        
-        # Try to set raw mode, but don't fail if it doesn't work
-        if [ -n "$BASHIC_TTY_SETTINGS" ] && [ "$BASHIC_TTY_SETTINGS" != "raw" ]; then
-            stty raw -echo min 0 time 0 2>/dev/null || true
-            debug "stty raw command executed"
-        else
-            debug "Using fallback terminal mode"
-            BASHIC_TTY_SETTINGS="fallback"
-        fi
+        BASHIC_TTY_SETTINGS=$(stty -g 2>/dev/null)
+        # Set terminal to raw mode with proper settings
+        stty raw -echo min 0 time 0 2>/dev/null || true
     else
-        debug "No terminal detected - using non-interactive mode"
         BASHIC_TTY_SETTINGS=""
-        # Read all available input into buffer for non-interactive mode
-        BASHIC_INKEY_BUFFER=$(timeout 0.1 cat 2>/dev/null || echo "")
-        debug "Non-interactive mode - loaded input buffer: '$BASHIC_INKEY_BUFFER'"
     fi
 }
 
@@ -383,91 +244,31 @@ cleanup_keyboard() {
 
 # Get a single character from keyboard or buffer
 get_key() {
-    local timeout="${1:-1}"  # Default to 1 second timeout
-    local char=""
-    
-    # Debug TTY settings
-    debug "get_key() - BASHIC_TTY_SETTINGS='$BASHIC_TTY_SETTINGS'"
-    
-    # Check if we're in interactive mode
-    if [ -n "$BASHIC_TTY_SETTINGS" ]; then
-        debug "Interactive mode - reading from terminal"
-        # Try different methods to read input
-        if [ "$BASHIC_TTY_SETTINGS" = "fallback" ]; then
-            # Fallback method - use timeout to avoid blocking
-            debug "Using fallback input method - non-blocking read"
-            char=$(dd bs=1 count=1 < /dev/tty 2>/dev/null | tr -d '\0' || echo "")
-        else
-            # Standard method - use read to get single character
-            debug "Using standard input method - reading single character"
-            read -n 1 char 2>/dev/null || char=""
-        fi
-        debug "get_key() read character: '$char'"
+    local char
+    if [ -t 0 ]; then
+        # Use read with timeout
+        IFS= read -r -n1 -t 1 char 2>/dev/null || char=""
     else
-        debug "Non-interactive mode - using buffer"
-        # Non-interactive mode - read from buffer or stdin
-        if [ -n "$BASHIC_INKEY_BUFFER" ]; then
-            # Use buffered input
-            char="${BASHIC_INKEY_BUFFER:0:1}"
-            BASHIC_INKEY_BUFFER="${BASHIC_INKEY_BUFFER:1}"
-            debug "get_key() read from buffer: '$char', remaining: '$BASHIC_INKEY_BUFFER'"
-        else
-            # Read directly from stdin
-            char=$(dd bs=1 count=1 2>/dev/null || echo "")
-            debug "get_key() read from stdin: '$char'"
-        fi
+        IFS= read -r -n1 -t 4 char || char=""
     fi
-    
-    echo "$char"
+
+    printf '%s' "$char"
 }
 
 
 
-# INKEY$ function for BASIC compatibility - SEMAPHORE PROTECTED
+# INKEY$ function for BASIC compatibility
 INKEY_STR() {
-    # Wait while semaphore is > 0 (another call is active)
-    local wait_count=0
-    while [ $BASHIC_INKEY_SEMAPHORE -gt 0 ] && [ $wait_count -lt 100 ]; do
-        debug "INKEY$ waiting - semaphore: $BASHIC_INKEY_SEMAPHORE, count: $wait_count"
-        sleep 0.08  # Longer wait for background process cleanup
-        wait_count=$((wait_count + 1))
-    done
-    
-    if [ $wait_count -ge 100 ]; then
-        debug "INKEY$ timeout waiting - forcing semaphore reset"
-        BASHIC_INKEY_SEMAPHORE=0
-    fi
-    
-    # Semaphore: increment counter to claim access
-    BASHIC_INKEY_SEMAPHORE=$((BASHIC_INKEY_SEMAPHORE + 1))
-    debug "INKEY$ semaphore incremented to: $BASHIC_INKEY_SEMAPHORE"
-    
-    # Force reset if semaphore is stuck
-    if [ $BASHIC_INKEY_SEMAPHORE -gt 10 ]; then
-        debug "INKEY$ semaphore stuck - forcing reset"
-        BASHIC_INKEY_SEMAPHORE=1
-    fi
-    
-    debug "INKEY$ acquired access - semaphore: $BASHIC_INKEY_SEMAPHORE"
-    
-    local timeout="${1:-0}"  # Default to no timeout
-    local key=$(get_key "$timeout")
-    
-    debug "INKEY$ got key: '$key'"
-    
+    local key=$(get_key)
     if [ -n "$key" ]; then
-        echo "$key"
+        key_name "$key"
     else
         echo ""
     fi
-    
-    # Semaphore: decrement counter to release access
-    BASHIC_INKEY_SEMAPHORE=$((BASHIC_INKEY_SEMAPHORE - 1))
-    debug "INKEY$ released access - semaphore: $BASHIC_INKEY_SEMAPHORE"
 }
 
-# Set up cleanup trap - temporarily disabled
-# trap cleanup_keyboard EXIT
+# Set up cleanup trap
+trap cleanup_keyboard EXIT
 # ===== STRING MODULE =====
 #!/bin/bash
 # BASHIC String Functions Module
@@ -479,13 +280,13 @@ str_len() {
 }
 
 str_left() {
-    local str="${1:-}"
+    local str="$1"
     local len="$2"
     echo "${str:0:$len}"
 }
 
 str_right() {
-    local str="${1:-}"
+    local str="$1"
     local len="$2"
     local str_len="${#str}"
     local start=$((str_len - len))
@@ -494,7 +295,7 @@ str_right() {
 }
 
 str_mid() {
-    local str="${1:-}"
+    local str="$1"
     local start="$2"
     local len="${3:-${#str}}"
     start=$((start - BASIC_INDEX_BASE))  # BASIC uses 1-based indexing
@@ -503,7 +304,7 @@ str_mid() {
 }
 
 str_asc() {
-    local str="${1:-}"
+    local str="$1"
     [[ -z "$str" ]] && echo "0" && return
     printf "%d" "'${str:0:1}"
 }
@@ -514,7 +315,7 @@ str_chr() {
 }
 
 str_val() {
-    local str="${1:-}"
+    local str="$1"
     # Extract numeric part from beginning of string
     if [[ "$str" =~ ^[[:space:]]*(-?[0-9]+(\.[0-9]+)?) ]]; then
         echo "${BASH_REMATCH[1]}"
@@ -648,6 +449,295 @@ screen_width() {
 }
 
 
+# ===== GRAPHICS MODULE =====
+#!/bin/bash
+# BASHIC Graphics Module
+# bashic.graphics.sh - Graphics functions for LINE command and text-based graphics
+
+# Graphics buffer for LINE command
+declare -a BASHIC_GRAPHICS_BUFFER  # 2D array for text graphics
+BASHIC_GRAPHICS_WIDTH=80
+BASHIC_GRAPHICS_HEIGHT=25
+
+# Initialize graphics buffer
+init_graphics_buffer() {
+    # Clear the graphics buffer
+    BASHIC_GRAPHICS_BUFFER=()
+    
+    # Initialize with spaces
+    local row=0
+    while [[ $row -lt $BASHIC_GRAPHICS_HEIGHT ]]; do
+        local col=0
+        local line=""
+        while [[ $col -lt $BASHIC_GRAPHICS_WIDTH ]]; do
+            line="${line} "
+            col=$((col + 1))
+        done
+        BASHIC_GRAPHICS_BUFFER[$row]="$line"
+        row=$((row + 1))
+    done
+    
+    debug "Graphics buffer initialized: ${BASHIC_GRAPHICS_WIDTH}x${BASHIC_GRAPHICS_HEIGHT}"
+}
+
+# Set a pixel in the graphics buffer
+set_pixel() {
+    local x="$1"
+    local y="$2"
+    local char="${3:-*}"
+    
+    # Convert graphics coordinates to buffer coordinates
+    # Graphics coordinates are typically 0-based, buffer is 0-based
+    local buffer_x=$x
+    local buffer_y=$y
+    
+    # Check bounds
+    if [[ $buffer_x -ge 0 && $buffer_x -lt $BASHIC_GRAPHICS_WIDTH && 
+          $buffer_y -ge 0 && $buffer_y -lt $BASHIC_GRAPHICS_HEIGHT ]]; then
+        local line="${BASHIC_GRAPHICS_BUFFER[$buffer_y]}"
+        local new_line="${line:0:$buffer_x}${char}${line:$((buffer_x + 1))}"
+        BASHIC_GRAPHICS_BUFFER[$buffer_y]="$new_line"
+    fi
+}
+
+# Draw a line between two points using Bresenham's algorithm
+draw_line() {
+    local x1="$1"
+    local y1="$2"
+    local x2="$3"
+    local y2="$4"
+    local char="${5:-*}"
+    
+    debug "Drawing line from ($x1,$y1) to ($x2,$y2) with char '$char'"
+    
+    # Bresenham's line algorithm
+    local dx=$((x2 - x1))
+    local dy=$((y2 - y1))
+    
+    # Determine step direction
+    local step_x=1
+    local step_y=1
+    if [[ $dx -lt 0 ]]; then
+        dx=$((-dx))
+        step_x=-1
+    fi
+    if [[ $dy -lt 0 ]]; then
+        dy=$((-dy))
+        step_y=-1
+    fi
+    
+    # Determine which axis has the greater change
+    local x=$x1
+    local y=$y1
+    
+    if [[ $dx -gt $dy ]]; then
+        # X-axis dominant
+        local error=$((dx / 2))
+        while [[ $x -ne $x2 ]]; do
+            set_pixel "$x" "$y" "$char"
+            error=$((error - dy))
+            if [[ $error -lt 0 ]]; then
+                y=$((y + step_y))
+                error=$((error + dx))
+            fi
+            x=$((x + step_x))
+        done
+    else
+        # Y-axis dominant
+        local error=$((dy / 2))
+        while [[ $y -ne $y2 ]]; do
+            set_pixel "$x" "$y" "$char"
+            error=$((error - dx))
+            if [[ $error -lt 0 ]]; then
+                x=$((x + step_x))
+                error=$((error + dy))
+            fi
+            y=$((y + step_y))
+        done
+    fi
+    
+    # Draw the final point
+    set_pixel "$x2" "$y2" "$char"
+}
+
+# Display the graphics buffer
+display_graphics() {
+    echo -ne "\033[H"  # Move cursor to home position
+    local row=0
+    while [[ $row -lt $BASHIC_GRAPHICS_HEIGHT ]]; do
+        echo "${BASHIC_GRAPHICS_BUFFER[$row]}"
+        row=$((row + 1))
+    done
+}
+
+# Clear the graphics buffer
+clear_graphics() {
+    init_graphics_buffer
+}
+
+# Execute SCREEN command
+execute_screen() {
+    local mode="${1:-0}"
+    mode=$(trim "$mode")
+    
+    # Evaluate mode if it's an expression
+    local screen_mode=$(evaluate_expression "$mode")
+    
+    debug "SCREEN: Setting display mode to $screen_mode"
+    
+    case "$screen_mode" in
+        0)
+            # Text mode (80x25) - default terminal mode
+            SCREEN_WIDTH=80
+            debug "SCREEN 0: Text mode (80x25)"
+            ;;
+        1)
+            # Medium resolution graphics (320x200) - simulate with wider terminal
+            SCREEN_WIDTH=80  # Keep reasonable width for terminal
+            debug "SCREEN 1: Medium resolution graphics mode (simulated)"
+            ;;
+        2)
+            # High resolution graphics (640x200) - simulate with wider terminal
+            SCREEN_WIDTH=80  # Keep reasonable width for terminal
+            debug "SCREEN 2: High resolution graphics mode (simulated)"
+            ;;
+        3)
+            # Extended text mode (80x25) - same as mode 0
+            SCREEN_WIDTH=80
+            debug "SCREEN 3: Extended text mode (80x25)"
+            ;;
+        4)
+            # Very high resolution (640x400) - simulate with wider terminal
+            SCREEN_WIDTH=80  # Keep reasonable width for terminal
+            debug "SCREEN 4: Very high resolution graphics mode (simulated)"
+            ;;
+        *)
+            debug "SCREEN $screen_mode: Unknown mode, defaulting to text mode"
+            SCREEN_WIDTH=80
+            ;;
+    esac
+    
+    # Clear screen when changing modes (like GW-BASIC)
+    screen_cls
+}
+
+# Execute LINE command
+execute_line() {
+    local stmt="${1:-}"
+    stmt=$(trim "$stmt")
+    
+    debug "LINE command: $stmt"
+    
+    # Parse LINE command syntax:
+    # LINE (x1,y1)-(x2,y2) [,color] [,B[F]]
+    # LINE (x1,y1)-(x2,y2) [,color] [,BF]
+    
+    # Parse LINE command using a simpler approach
+    if [[ "$stmt" =~ ^\(.*\)-\(.*\) ]]; then
+        # Extract coordinates using parameter expansion
+        local coords="${stmt#*(}"
+        local point1="${coords%%)-*}"
+        coords="${coords#*)-}"
+        local point2="${coords%%)*}"
+        local options="${coords#*)}"
+        
+        # Parse coordinates - remove parentheses and split by comma
+        local coords1=$(echo "$point1" | sed 's/[()]//g')
+        local coords2=$(echo "$point2" | sed 's/[()]//g')
+        
+        if [[ "$coords1" =~ ^([^,]+),([^,]+)$ ]]; then
+            local x1=$(evaluate_expression "${BASH_REMATCH[1]}")
+            local y1=$(evaluate_expression "${BASH_REMATCH[2]}")
+        else
+            error "Invalid LINE coordinates: $coords1"
+            return
+        fi
+        
+        if [[ "$coords2" =~ ^([^,]+),([^,]+)$ ]]; then
+            local x2=$(evaluate_expression "${BASH_REMATCH[1]}")
+            local y2=$(evaluate_expression "${BASH_REMATCH[2]}")
+        else
+            error "Invalid LINE coordinates: $coords2"
+            return
+        fi
+        
+        # Parse options
+        local color="*"
+        local box_mode=""
+        
+        if [[ -n "$options" ]]; then
+            options=$(trim "$options")
+            # Remove leading comma
+            options="${options#,}"
+            
+            # Check for box mode (B or BF)
+            if [[ "$options" =~ ,[[:space:]]*B[[:space:]]*F?[[:space:]]*$ ]]; then
+                box_mode="${BASH_REMATCH[0]}"
+                options="${options%%,*}"
+            elif [[ "$options" =~ ,[[:space:]]*B[[:space:]]*$ ]]; then
+                box_mode="${BASH_REMATCH[0]}"
+                options="${options%%,*}"
+            fi
+            
+            # Parse color if present
+            if [[ -n "$options" ]]; then
+                options=$(trim "$options")
+                options="${options#,}"
+                if [[ -n "$options" ]]; then
+                    color=$(evaluate_expression "$options")
+                fi
+            fi
+        fi
+        
+        debug "LINE: ($x1,$y1) to ($x2,$y2), color='$color', box='$box_mode'"
+        
+        # Draw the line or box
+        if [[ -n "$box_mode" ]]; then
+            # Draw box
+            draw_line "$x1" "$y1" "$x2" "$y1" "$color"  # Top
+            draw_line "$x2" "$y1" "$x2" "$y2" "$color"  # Right
+            draw_line "$x2" "$y2" "$x1" "$y2" "$color"  # Bottom
+            draw_line "$x1" "$y2" "$x1" "$y1" "$color"  # Left
+            
+            # If BF (box fill), fill the box
+            if [[ "$box_mode" =~ BF ]]; then
+                local min_x=$x1
+                local max_x=$x2
+                local min_y=$y1
+                local max_y=$y2
+                
+                if [[ $x1 -gt $x2 ]]; then
+                    min_x=$x2
+                    max_x=$x1
+                fi
+                if [[ $y1 -gt $y2 ]]; then
+                    min_y=$y2
+                    max_y=$y1
+                fi
+                
+                local fill_y=$((min_y + 1))
+                while [[ $fill_y -lt $max_y ]]; do
+                    local fill_x=$((min_x + 1))
+                    while [[ $fill_x -lt $max_x ]]; do
+                        set_pixel "$fill_x" "$fill_y" "$color"
+                        fill_x=$((fill_x + 1))
+                    done
+                    fill_y=$((fill_y + 1))
+                done
+            fi
+        else
+            # Draw simple line
+            draw_line "$x1" "$y1" "$x2" "$y2" "$color"
+        fi
+        
+        # Display the graphics buffer
+        display_graphics
+        
+    else
+        error "Invalid LINE statement: $stmt"
+    fi
+}
+
 # ===== EVAL MODULE =====
 #!/bin/bash
 # BASHIC Expression Evaluation Module
@@ -655,10 +745,9 @@ screen_width() {
 
 # Evaluate expression (optimized with single regex pattern)
 evaluate_expression() {
-    local expr="${1:-}"
+    local expr="$1"
     expr=$(trim "$expr")
     
-    push_debug_stack "evaluate_expression" "\"$expr\""
     debug "Evaluating expression: $expr"
     
     # Handle string literals
@@ -800,11 +889,6 @@ evaluate_expression() {
                 str_tab "$arg"
                 return
                 ;;
-            "INKEY")
-                # Handle INKEY() function call (same as INKEY$)
-                INKEY_STR
-                return
-                ;;
             *)
                 # Not a known function, might be an array - fall through to array handling
                 ;;
@@ -818,17 +902,7 @@ evaluate_expression() {
         local index_expr="${BASH_REMATCH[2]}"
         
         # Evaluate the index expression
-        # Handle 2D arrays with comma-separated indices
-        local index
-        if [[ "$index_expr" =~ ^([^,]+),([^,]+)$ ]]; then
-            # 2D array: evaluate both indices
-            local index1=$(evaluate_expression "${BASH_REMATCH[1]}")
-            local index2=$(evaluate_expression "${BASH_REMATCH[2]}")
-            index="${index1},${index2}"
-        else
-            # 1D array: evaluate single index
-            index=$(evaluate_expression "$index_expr")
-        fi
+        local index=$(evaluate_expression "$index_expr")
         
         # Check if array exists
         if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
@@ -840,13 +914,9 @@ evaluate_expression() {
         local array_type="${array_info%:*}"
         local array_size="${array_info#*:}"
         
-        debug "Array access: array_name='${array_name:-UNKNOWN}', array_info='${array_info:-UNKNOWN}', array_type='${array_type:-UNKNOWN}', array_size='${array_size:-UNKNOWN}', index='${index:-UNKNOWN}'"
-        log_execution "Array access: ${array_name:-UNKNOWN}(${index:-UNKNOWN}) - size: ${array_size:-UNKNOWN}"
-        
         # Check bounds
-        if [[ ${index:-0} -lt 0 || ${index:-0} -gt ${array_size:-0} ]]; then
-            debug "Array bounds check failed: array_name='${array_name:-UNKNOWN}', index=${index:-0}, array_size=${array_size:-0}"
-            error "Array index out of bounds: ${array_name:-UNKNOWN}(${index:-0})"
+        if [[ $index -lt 0 || $index -gt $array_size ]]; then
+            error "Array index out of bounds: $array_name($index)"
         fi
         
         # Return array element value
@@ -933,13 +1003,11 @@ evaluate_expression() {
     
     # Default: return as-is
     echo "$expr"
-    
-    pop_debug_stack
 }
 
 # Evaluate simple condition
 evaluate_condition() {
-    local condition="${1:-}"
+    local condition="$1"
     local result=false
     
     if [[ "$condition" =~ ^([^<>=!]+)[[:space:]]*([<>=!]+)[[:space:]]*(.+)$ ]]; then
@@ -997,7 +1065,7 @@ evaluate_condition() {
 
 # Evaluate compound condition with AND/OR/NOT operators
 evaluate_compound_condition() {
-    local condition="${1:-}"
+    local condition="$1"
     
     # Handle NOT operator (highest precedence)
     if [[ "$condition" =~ ^NOT[[:space:]]+(.+)$ ]]; then
@@ -1055,10 +1123,10 @@ evaluate_compound_condition() {
 
 # ===== CONTROL MODULE =====
 execute_for() {
-    local stmt="${1:-}"
+    local stmt="$1"
     stmt=$(trim "$stmt")
     
-    if [[ "$stmt" =~ ^([A-Za-z][A-Za-z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
+    if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
         local var_name="${BASH_REMATCH[1]}"
         local start_val="${BASH_REMATCH[2]}"
         local end_val="${BASH_REMATCH[3]}"
@@ -1068,7 +1136,6 @@ execute_for() {
         end_val=$(evaluate_expression "$end_val")
         step_val=$(evaluate_expression "$step_val")
         
-        # Initialize the FOR loop variable immediately
         NUMERIC_VARS["$var_name"]="$start_val"
         
         # Push FOR loop info onto stack
@@ -1076,13 +1143,12 @@ execute_for() {
         stack_push FOR_STACK "$var_name:$end_val:$step_val:$CURRENT_LINE"
         
         debug "FOR $var_name = $start_val TO $end_val STEP $step_val at line $CURRENT_LINE"
-        debug "FOR variable $var_name initialized to $start_val"
     else
         error "Invalid FOR statement: $stmt"
     fi
 }
 execute_next() {
-    local stmt="${1:-}"
+    local stmt="$1"
     
     if [[ ${#FOR_STACK[@]} -eq 0 ]]; then
         error "NEXT without FOR"
@@ -1098,41 +1164,15 @@ execute_next() {
     
     # Get current variable value and increment
     local current_val="${NUMERIC_VARS[$var_name]}"
-    
-    # Check if we need floating point arithmetic
-    if [[ "$current_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
-        # Use bc for floating point arithmetic
-        local new_val=$(echo "scale=10; $current_val + $step_val" | bc -l)
-        # Remove trailing zeros and decimal point if not needed
-        new_val=$(echo "$new_val" | sed 's/\.0*$//')
-    else
-        # Use bash arithmetic for integers
-        local new_val=$((current_val + step_val))
-    fi
-    
+    local new_val=$((current_val + step_val))
     NUMERIC_VARS["$var_name"]="$new_val"
     
     # Check if loop should continue
     local continue_loop=false
-    
-    # Check if we need floating point comparison
-    if [[ "$new_val" =~ \. ]] || [[ "$end_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
-        # Use bc for floating point comparison
-        local step_positive=$(echo "$step_val > 0" | bc -l)
-        if [[ "$step_positive" == "1" ]]; then
-            local result=$(echo "$new_val <= $end_val" | bc -l)
-            [[ "$result" == "1" ]] && continue_loop=true
-        else
-            local result=$(echo "$new_val >= $end_val" | bc -l)
-            [[ "$result" == "1" ]] && continue_loop=true
-        fi
+    if [[ $step_val -gt 0 ]]; then
+        [[ $new_val -le $end_val ]] && continue_loop=true
     else
-        # Use bash arithmetic for integer comparison
-        if [[ $step_val -gt 0 ]]; then
-            [[ $new_val -le $end_val ]] && continue_loop=true
-        else
-            [[ $new_val -ge $end_val ]] && continue_loop=true
-        fi
+        [[ $new_val -ge $end_val ]] && continue_loop=true
     fi
     
     if [[ "$continue_loop" == "true" ]]; then
@@ -1153,7 +1193,7 @@ execute_next() {
     fi
 }
 execute_while() {
-    local stmt="${1:-}"
+    local stmt="$1"
     stmt=$(trim "$stmt")
     
     # Store the condition and current line for the loop
@@ -1163,7 +1203,7 @@ execute_while() {
     debug "WHILE $stmt"
 }
 execute_wend() {
-    local stmt="${1:-}"
+    local stmt="$1"
     
     if [[ ${#WHILE_STACK[@]} -eq 0 ]]; then
         error "WEND without WHILE"
@@ -1194,7 +1234,7 @@ execute_wend() {
     fi
 }
 execute_if() {
-    local stmt="${1:-}"
+    local stmt="$1"
     stmt=$(trim "$stmt")
     
     if [[ "$stmt" =~ ^(.+)[[:space:]]+THEN[[:space:]]+(.*)$ ]]; then
@@ -1358,7 +1398,7 @@ execute_print() {
     fi
 }
 execute_let() {
-    local stmt="${1:-}"
+    local stmt="$1"
     stmt=$(trim "$stmt")
 
     debug "execute_let called with: $stmt"
@@ -1373,17 +1413,7 @@ execute_let() {
         debug "Array assignment matched: array_name=$array_name, index_expr=$index_expr, value=$value"
         
         # Evaluate index and value
-        # Handle 2D arrays with comma-separated indices
-        local index
-        if [[ "$index_expr" =~ ^([^,]+),([^,]+)$ ]]; then
-            # 2D array: evaluate both indices
-            local index1=$(evaluate_expression "${BASH_REMATCH[1]}")
-            local index2=$(evaluate_expression "${BASH_REMATCH[2]}")
-            index="${index1},${index2}"
-        else
-            # 1D array: evaluate single index
-            index=$(evaluate_expression "$index_expr")
-        fi
+        local index=$(evaluate_expression "$index_expr")
         value=$(evaluate_expression "$value")
         
         # Check if array exists
@@ -1397,9 +1427,8 @@ execute_let() {
         local array_size="${array_info#*:}"
         
         # Check bounds
-        if [[ ${index:-0} -lt 0 || ${index:-0} -gt ${array_size:-0} ]]; then
-            debug "Array bounds check failed: array_name='${array_name:-UNKNOWN}', index=${index:-0}, array_size=${array_size:-0}"
-            error "Array index out of bounds: ${array_name:-UNKNOWN}(${index:-0})"
+        if [[ $index -lt 0 || $index -gt $array_size ]]; then
+            error "Array index out of bounds: $array_name($index)"
         fi
         
         # Store array element
@@ -1435,7 +1464,7 @@ execute_let() {
     fi
 }
 execute_dim() {
-    local stmt="${1:-}"
+    local stmt="$1"
     stmt=$(trim "$stmt")
     
     # Arrays are already declared during pre-parsing
@@ -1443,7 +1472,7 @@ execute_dim() {
     debug "DIM statement already processed during pre-parsing: $stmt"
 }
 execute_input() {
-    local stmt="${1:-}"
+    local stmt="$1"
     stmt=$(trim "$stmt")
     
     local prompt=""
@@ -1524,7 +1553,7 @@ execute_input() {
     debug "INPUT: Read values into variables"
 }
 execute_read() {
-    local stmt="${1:-}"
+    local stmt="$1"
     stmt=$(trim "$stmt")
     
     # Parse variable list (comma-separated)
@@ -1534,12 +1563,12 @@ execute_read() {
         var_name=$(trim "$var_name")
         
         # Check if we have more data
-        if [[ ${BASHIC_DATA_POINTER:-0} -ge ${#BASHIC_DATA_ITEMS[@]} ]]; then
+        if [[ $DATA_POINTER -ge ${#DATA_ITEMS[@]} ]]; then
             error "READ: Out of DATA"
         fi
         
-        local value="${BASHIC_DATA_ITEMS[$BASHIC_DATA_POINTER]}"
-        BASHIC_DATA_POINTER=$((BASHIC_DATA_POINTER + 1))
+        local value="${DATA_ITEMS[$DATA_POINTER]}"
+        DATA_POINTER=$((DATA_POINTER + 1))
         
         # Assign to variable
         if [[ "$var_name" =~ \$$ ]]; then
@@ -1552,82 +1581,11 @@ execute_read() {
     done
 }
 execute_restore() {
-    local stmt="${1:-}"
-    stmt=$(trim "$stmt")
-    
-    if [[ -z "$stmt" ]]; then
-        # RESTORE without line number - reset to beginning
-        BASHIC_DATA_POINTER=0
-        debug "RESTORE: Data pointer reset to 0"
-    else
-        # RESTORE with line number - find the DATA statement
-        local target_line=$(evaluate_expression "$stmt")
-        debug "RESTORE: Looking for DATA statement at line $target_line"
-        
-        # Find the DATA line number that matches or is closest before target_line
-        local found_pos=0
-        local i=0
-        while [[ $i -lt ${#BASHIC_DATA_LINES[@]} ]]; do
-            local data_line="${BASHIC_DATA_LINES[$i]}"
-            if [[ $data_line -le $target_line ]]; then
-                found_pos="${BASHIC_DATA_START_POS[$i]}"
-                debug "RESTORE: Found DATA line $data_line at position $found_pos"
-            else
-                break
-            fi
-            i=$((i + 1))
-        done
-        
-        BASHIC_DATA_POINTER=$found_pos
-        debug "RESTORE: Data pointer set to $found_pos"
-    fi
-}
-execute_screen() {
-    local mode="${1:-0}"
-    mode=$(trim "$mode")
-    
-    # Evaluate mode if it's an expression
-    local screen_mode=$(evaluate_expression "$mode")
-    
-    debug "SCREEN: Setting display mode to $screen_mode"
-    
-    case "$screen_mode" in
-        0)
-            # Text mode (80x25) - default terminal mode
-            SCREEN_WIDTH=80
-            debug "SCREEN 0: Text mode (80x25)"
-            ;;
-        1)
-            # Medium resolution graphics (320x200) - simulate with wider terminal
-            SCREEN_WIDTH=80  # Keep reasonable width for terminal
-            debug "SCREEN 1: Medium resolution graphics mode (simulated)"
-            ;;
-        2)
-            # High resolution graphics (640x200) - simulate with wider terminal
-            SCREEN_WIDTH=80  # Keep reasonable width for terminal
-            debug "SCREEN 2: High resolution graphics mode (simulated)"
-            ;;
-        3)
-            # Extended text mode (80x25) - same as mode 0
-            SCREEN_WIDTH=80
-            debug "SCREEN 3: Extended text mode (80x25)"
-            ;;
-        4)
-            # Very high resolution (640x400) - simulate with wider terminal
-            SCREEN_WIDTH=80  # Keep reasonable width for terminal
-            debug "SCREEN 4: Very high resolution graphics mode (simulated)"
-            ;;
-        *)
-            debug "SCREEN $screen_mode: Unknown mode, defaulting to text mode"
-            SCREEN_WIDTH=80
-            ;;
-    esac
-    
-    # Clear screen when changing modes (like GW-BASIC)
-    screen_cls
+    DATA_POINTER=0
+    debug "RESTORE: Data pointer reset to 0"
 }
 execute_randomize() {
-    local stmt="${1:-}"
+    local stmt="$1"
     stmt=$(trim "$stmt")
     
     # RANDOMIZE optionally takes a seed value
@@ -1640,10 +1598,9 @@ execute_randomize() {
     fi
 }
 execute_statement() {
-    local stmt="${1:-}"
+    local stmt="$1"
     stmt=$(trim "$stmt")
     
-    push_debug_stack "execute_statement" "\"$stmt\""
     debug "Executing: $stmt"
     
     # Skip empty statements and comments
@@ -1657,7 +1614,7 @@ execute_statement() {
     case "$upper_stmt" in
         END|STOP)
             debug "Program ended"
-            BASHIC_RUNNING=false
+            RUNNING=false
             ;;
         CLS)
             screen_cls
@@ -1698,6 +1655,11 @@ execute_statement() {
             args=$(trim "$args")
             execute_screen "$args"
             ;;
+        LINE*)
+            local args="${stmt#*LINE}"
+            args=$(trim "$args")
+            execute_line "$args"
+            ;;
         KEY*|SOUND*|POKE*|PEEK*|DEF*)
             # Other GW-BASIC hardware commands - ignore (no-op stubs)
             debug "Ignoring GW-BASIC command: ${upper_stmt%% *}"
@@ -1710,9 +1672,8 @@ execute_statement() {
             local args="${stmt#*READ}"
             execute_read "$args"
             ;;
-        RESTORE*)
-            local args="${stmt#*RESTORE}"
-            execute_restore "$args"
+        RESTORE)
+            execute_restore
             ;;
         RANDOMIZE*)
             local args="${stmt#*RANDOMIZE}"
@@ -1807,8 +1768,6 @@ execute_statement() {
             fi
             ;;
     esac
-    
-    pop_debug_stack
 }
 
 # ===== CORE MODULE =====
@@ -1824,20 +1783,32 @@ load_program() {
         error "File not found: $filename"
     fi
     
-    # Set up log file to match input filename
-    PROGRAM_FILE="$filename"
-    local basename=$(basename "$filename" .bas)
-    BASHIC_LOG_FILE="${basename}.log"
-    
     debug "Loading program: $filename"
-    debug "Log file: $BASHIC_LOG_FILE"
     
-    # Initialize keyboard handling
-    init_keyboard
-    
-    # Initialize semaphore
-    BASHIC_INKEY_SEMAPHORE=0
-    debug "BASHIC_INKEY_SEMAPHORE initialized to 0"
+    # Set up terminal for INKEY$ handling
+    if [[ -t 0 ]]; then
+        debug "stdin is a terminal - setting up interactive mode"
+        # Save current terminal settings
+        OLD_TTY_SETTINGS=$(stty -g)
+        # Set terminal to raw mode
+        stty raw -echo
+        
+        # Function to handle cleanup
+        cleanup_terminal() {
+            if [[ -n "$OLD_TTY_SETTINGS" ]]; then
+                debug "Restoring terminal settings"
+                stty "$OLD_TTY_SETTINGS" </dev/tty 2>/dev/null || true
+            fi
+        }
+        
+        # Trap for cleanup on script exit
+        trap cleanup_terminal EXIT
+    else
+        debug "stdin is not a terminal - reading input for buffer"
+        # Read all input into buffer for non-interactive mode
+        INKEY_BUFFER=$(cat)
+        debug "INKEY_BUFFER filled with ${#INKEY_BUFFER} characters"
+    fi
     
     # Clear existing program
     PROGRAM_LINES=()
@@ -1847,10 +1818,11 @@ load_program() {
     GOSUB_STACK=()
     FOR_STACK=()
     WHILE_STACK=()
-    BASHIC_DATA_ITEMS=()
-    BASHIC_DATA_POINTER=0
-    BASHIC_DATA_LINES=()
-    BASHIC_DATA_START_POS=()
+    DATA_ITEMS=()
+    DATA_POINTER=0
+    
+    # Initialize graphics buffer
+    init_graphics_buffer
     
     # Read program lines
     while IFS= read -r line; do
@@ -1995,7 +1967,7 @@ pre_parse_program() {
                 # Parse DIM statement: ARRAY(SIZE) or ARRAY$(SIZE) or ARRAY(SIZE,SIZE) for 2D
                 # For 2D arrays, we'll use the first dimension as size
                 # SIZE can be a number or a variable name (for dynamic sizing)
-                if [[ "$array_decl" =~ ^([A-Za-z][A-Za-z0-9_]*)(\$?)\(([A-Za-z0-9_%]+)([[:space:]]*,[[:space:]]*[A-Za-z0-9_%]+)?\)$ ]]; then
+                if [[ "$array_decl" =~ ^([A-Z][A-Z0-9_]*)(\$?)\(([A-Z0-9_%]+)(,[A-Z0-9_%]+)?\)$ ]]; then
                     local array_name="${BASH_REMATCH[1]}"
                     local is_string="${BASH_REMATCH[2]}"
                     local size_expr="${BASH_REMATCH[3]}"
@@ -2032,11 +2004,6 @@ pre_parse_program() {
         if [[ "$upper_stmt" =~ ^DATA[[:space:]]+(.*)$ ]]; then
             local data_args="${BASH_REMATCH[1]}"
             
-            # Record this DATA line and its starting position
-            BASHIC_DATA_LINES+=("$line_num")
-            BASHIC_DATA_START_POS+=("${#BASHIC_DATA_ITEMS[@]}")
-            debug "DATA line $line_num starts at position ${#BASHIC_DATA_ITEMS[@]}"
-            
             # Split by comma, preserving quoted strings
             local in_quotes=0
             local current=""
@@ -2046,10 +2013,14 @@ pre_parse_program() {
                 local char="${data_args:$i:1}"
                 if [[ "$char" == '"' ]]; then
                     in_quotes=$((1 - in_quotes))
-                    # Don't include quotes in the actual data
+                    current="${current}${char}"
                 elif [[ "$char" == "," && $in_quotes -eq 0 ]]; then
                     current=$(trim "$current")
-                    BASHIC_DATA_ITEMS+=("$current")
+                    # Remove quotes if present
+                    if [[ "$current" =~ ^\"(.*)\"$ ]]; then
+                        current="${BASH_REMATCH[1]}"
+                    fi
+                    DATA_ITEMS+=("$current")
                     current=""
                 else
                     current="${current}${char}"
@@ -2060,14 +2031,17 @@ pre_parse_program() {
             # Add last item
             if [[ -n "$current" ]]; then
                 current=$(trim "$current")
-                BASHIC_DATA_ITEMS+=("$current")
+                if [[ "$current" =~ ^\"(.*)\"$ ]]; then
+                    current="${BASH_REMATCH[1]}"
+                fi
+                DATA_ITEMS+=("$current")
             fi
             
-            debug "DATA: Added ${#BASHIC_DATA_ITEMS[@]} total items so far"
+            debug "DATA: Added ${#DATA_ITEMS[@]} total items so far"
         fi
     done
     
-    debug "Pre-parsing complete: ${#ARRAYS[@]} arrays declared, ${#BASHIC_DATA_ITEMS[@]} DATA items"
+    debug "Pre-parsing complete: ${#ARRAYS[@]} arrays declared, ${#DATA_ITEMS[@]} DATA items"
 }
 
 # Get sorted line numbers
@@ -2106,10 +2080,8 @@ find_next_line() {
 # Run program
 run_program() {
     debug "Starting program execution"
-    # init_log
-    # log_execution "Program execution started"
     
-    BASHIC_RUNNING=true
+    RUNNING=true
     CURRENT_LINE=0
     
     # Start with first line
@@ -2122,16 +2094,15 @@ run_program() {
     
     CURRENT_LINE="${line_numbers[0]}"
     
-    while [[ "$BASHIC_RUNNING" == "true" ]]; do
+    while [[ "$RUNNING" == "true" ]]; do
         local stmt="${PROGRAM_LINES[$CURRENT_LINE]}"
         local saved_line="$CURRENT_LINE"
         
-        # debug "Executing line $CURRENT_LINE: $stmt"
-        # log_execution "Executing: $stmt"
+        debug "Executing line $CURRENT_LINE: $stmt"
         
         execute_statement "$stmt"
         
-        if [[ "$BASHIC_RUNNING" == "true" ]]; then
+        if [[ "$RUNNING" == "true" ]]; then
             # Check if statement changed the line (GOTO, ON GOTO, etc.)
             if [[ "$CURRENT_LINE" != "$saved_line" ]]; then
                 # Line was changed by control flow - use new line on next iteration
@@ -2139,19 +2110,22 @@ run_program() {
             else
                 # Normal flow - advance to next line
                 local next_line=$(find_next_line "$CURRENT_LINE")
-                debug "Current line: $CURRENT_LINE, Next line: $next_line"
                 if [[ -n "$next_line" ]]; then
                     CURRENT_LINE="$next_line"
-                    debug "Advanced to line: $CURRENT_LINE"
                 else
-                    debug "No next line found - ending program"
-                    BASHIC_RUNNING=false
+                    RUNNING=false
                 fi
             fi
         fi
     done
     
     debug "Program execution completed"
+    
+    # Restore terminal settings if we were in interactive mode
+    if [[ -t 0 && -n "${saved_stty:-}" ]]; then
+        debug "Restoring terminal settings"
+        stty "$saved_stty" 2>/dev/null || true
+    fi
 }
 
 # Parse command line arguments
@@ -2159,7 +2133,7 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             -d|--debug)
-                BASHIC_DEBUG=true
+                DEBUG=true
                 shift
                 ;;
             -h|--help)

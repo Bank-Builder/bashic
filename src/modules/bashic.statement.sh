@@ -343,6 +343,16 @@ execute_statement() {
                 screen_width "${BASH_REMATCH[1]}"
             fi
             ;;
+        SCREEN*)
+            local args="${stmt#*SCREEN}"
+            args=$(trim "$args")
+            execute_screen "$args"
+            ;;
+        LINE*)
+            local args="${stmt#*LINE}"
+            args=$(trim "$args")
+            execute_line "$args"
+            ;;
         KEY*|SOUND*|POKE*|PEEK*|DEF*)
             # Other GW-BASIC hardware commands - ignore (no-op stubs)
             debug "Ignoring GW-BASIC command: ${upper_stmt%% *}"
