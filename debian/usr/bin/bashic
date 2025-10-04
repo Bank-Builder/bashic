@@ -270,6 +270,40 @@ evaluate_expression() {
         return
     fi
     
+    # Handle array access
+    local array_regex='^([A-Z][A-Z0-9]*)\(([^)]+)\)$'
+    if [[ "$expr" =~ $array_regex ]]; then
+        local array_name="${BASH_REMATCH[1]}"
+        local index_expr="${BASH_REMATCH[2]}"
+        
+        # Evaluate the index expression
+        local index=$(evaluate_expression "$index_expr")
+        
+        # Check if array exists
+        if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+            error "Array not declared: $array_name"
+        fi
+        
+        # Get array type and size
+        local array_info="${ARRAYS[$array_name]}"
+        local array_type="${array_info%:*}"
+        local array_size="${array_info#*:}"
+        
+        # Check bounds
+        if [[ $index -lt 0 || $index -gt $array_size ]]; then
+            error "Array index out of bounds: $array_name($index)"
+        fi
+        
+        # Return array element value
+        local element_name="${array_name}_${index}"
+        if [[ "$array_type" == "string" ]]; then
+            echo "${STRING_VARS[$element_name]:-}"
+        else
+            echo "${NUMERIC_VARS[$element_name]:-0}"
+        fi
+        return
+    fi
+    
     # Handle numeric literals
     if is_numeric "$expr"; then
         echo "$expr"
@@ -410,8 +444,46 @@ execute_print() {
 # Execute LET statement
 execute_let() {
     local stmt="$1"
+    stmt=$(trim "$stmt")
     
-    if [[ "$stmt" =~ ^([A-Z][A-Z0-9]*\$?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+    # Handle array assignment: VARNAME(INDEX) = VALUE
+    local array_assign_regex='^([A-Z][A-Z0-9]*)\(([^)]+)\)[[:space:]]*=[[:space:]]*(.*)$'
+    if [[ "$stmt" =~ $array_assign_regex ]]; then
+        local array_name="${BASH_REMATCH[1]}"
+        local index_expr="${BASH_REMATCH[2]}"
+        local value="${BASH_REMATCH[3]}"
+        
+        # Evaluate index and value
+        local index=$(evaluate_expression "$index_expr")
+        value=$(evaluate_expression "$value")
+        
+        # Check if array exists
+        if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+            error "Array not declared: $array_name"
+        fi
+        
+        # Get array info
+        local array_info="${ARRAYS[$array_name]}"
+        local array_type="${array_info%:*}"
+        local array_size="${array_info#*:}"
+        
+        # Check bounds
+        if [[ $index -lt 0 || $index -gt $array_size ]]; then
+            error "Array index out of bounds: $array_name($index)"
+        fi
+        
+        # Store array element
+        local element_name="${array_name}_${index}"
+        if [[ "$array_type" == "string" ]]; then
+            STRING_VARS["$element_name"]="$value"
+        else
+            NUMERIC_VARS["$element_name"]="$value"
+        fi
+        
+        debug "Set $array_name($index) = $value"
+        
+    # Handle regular variable assignment: VARNAME = VALUE
+    elif [[ "$stmt" =~ ^([A-Z][A-Z0-9]*\$?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
         local var_name="${BASH_REMATCH[1]}"
         local value="${BASH_REMATCH[2]}"
         
@@ -426,6 +498,28 @@ execute_let() {
         debug "Set $var_name = $value"
     else
         error "Invalid LET statement: $stmt"
+    fi
+}
+
+# Execute DIM statement
+execute_dim() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    if [[ "$stmt" =~ ^([A-Z][A-Z0-9]*\$?)\(([0-9]+)\)$ ]]; then
+        local var_name="${BASH_REMATCH[1]}"
+        local array_size="${BASH_REMATCH[2]}"
+        
+        # Store array metadata
+        if [[ "$var_name" =~ \$$ ]]; then
+            ARRAYS["$var_name"]="string:$array_size"
+        else
+            ARRAYS["$var_name"]="numeric:$array_size"
+        fi
+        
+        debug "DIM $var_name($array_size)"
+    else
+        error "Invalid DIM statement: $stmt"
     fi
 }
 
@@ -599,6 +693,10 @@ execute_statement() {
             local args="${stmt#*LET}"
             execute_let "$args"
             ;;
+        DIM*)
+            local args="${stmt#*DIM}"
+            execute_dim "$args"
+            ;;
         FOR*)
             local args="${stmt#*FOR}"
             execute_for "$args"
@@ -628,7 +726,8 @@ execute_statement() {
             ;;
         *)
             # Check if it's an assignment without LET
-            if [[ "$stmt" =~ ^[A-Z][A-Z0-9]*\$?[[:space:]]*= ]]; then
+            local assign_regex='^[A-Z][A-Z0-9]*(\$|\([^)]+\))?[[:space:]]*='
+            if [[ "$stmt" =~ $assign_regex ]]; then
                 execute_let "$stmt"
             else
                 error "Unknown statement: $stmt"
