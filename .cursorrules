@@ -39,6 +39,8 @@
 - Use clear directory hierarchy
 - Name files descriptively
 - Group related functionality
+- Single source file approach - no duplicate versions
+- Use build scripts to copy files where needed
 
 ## Development Process
 - Plan changes in small steps
