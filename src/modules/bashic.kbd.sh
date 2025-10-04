@@ -35,7 +35,7 @@ key_name() {
 cleanup_keyboard() {
     # Restore terminal settings if we're in a terminal
     if [ -n "$BASHIC_TTY_SETTINGS" ]; then
-        stty "$BASHIC_TTY_SETTINGS"
+        stty "$BASHIC_TTY_SETTINGS" 2>/dev/null || true
     fi
 }
 
@@ -44,9 +44,6 @@ get_key() {
     local char
     if [ -t 0 ]; then
         # Interactive mode - read directly from terminal
-        # local IFS=
-        # local char
-        
         # Read a single character with timeout - use dd for raw input
         char=$(timeout 4 dd bs=1 count=1 2>/dev/null | head -c1)
         if [ ${#char} -gt 0 ]; then
@@ -54,25 +51,13 @@ get_key() {
         else
             echo ""
         fi
-        
-        # Print the character (since echo is off) - but skip special keys
-        # case "$char" in
-        #     $'\n'|$'\r'|$'\e'|$'\t'|$'\b') 
-        #         # Don't echo special keys to avoid formatting issues
-        #         ;;
-        #     *) 
-        #         # Echo regular characters so user sees what they typed
-        #         echo -n "$char" > /dev/tty
-        #         ;;
-        # esac
-        # echo "$char"
     else
-        # Non-interactive mode - read from stdin
-        # local char
-        if read -r -n1 -t 4 char; then
+        # Non-interactive mode - read from stdin using dd
+        char=$(dd bs=1 count=1 2>/dev/null | head -c1)
+        if [ ${#char} -gt 0 ]; then
             echo -n "$char"
         else
-            echo -n ""
+            echo ""
         fi
     fi
 }
