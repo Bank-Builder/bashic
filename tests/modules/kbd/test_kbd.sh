@@ -67,11 +67,29 @@ else
     echo "Expected: 'abc', Got: '$output'"
 fi
 
-# Test 4: Test interactive mode (skipped - requires manual testing)
+# Test 4: Test interactive mode with timeout
 echo -e "\nTest 4: Testing interactive mode"
-echo "Skipping interactive test (requires manual keyboard input)"
-echo "To test manually, run: source src/modules/bashic.kbd.sh && init_keyboard && get_key"
-print_result "Interactive input (skipped)" 0
+if [[ -t 0 ]]; then
+    echo "Interactive mode - will timeout in 0.1s (press a key to test input)"
+    init_keyboard
+    key=$(get_key)
+    if [[ -n "$key" ]]; then
+        echo "Key detected: '$key'"
+        print_result "Interactive input (key pressed)" 0
+    else
+        echo "Timeout (no key pressed)"
+        print_result "Interactive input (timeout)" 0
+    fi
+else
+    echo "Non-interactive mode - testing timeout behavior"
+    init_keyboard
+    key=$(get_key)
+    if [[ -z "$key" ]]; then
+        print_result "Interactive input (timeout as expected)" 0
+    else
+        print_result "Interactive input (unexpected key: '$key')" 1
+    fi
+fi
 
 # Print final results
 echo -e "\nTest Summary:"
