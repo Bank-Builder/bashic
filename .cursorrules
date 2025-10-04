@@ -38,6 +38,8 @@
 ## Testing Requirements
 - Test code after each change
 - Run test programs (test1.bas, test2.bas) after interpreter changes
+- ALWAYS run regression.bas after ANY changes to verify no functionality is broken
+- Add new test cases to regression.bas when implementing new features
 - Don't iterate more than twice on solving a problem - stop and ask for guidance
 - Create test cases for new features
 

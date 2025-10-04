@@ -257,14 +257,14 @@ evaluate_expression() {
     fi
     
     # Handle string variables
-    if [[ "$expr" =~ ^[A-Z][A-Z0-9]*\$$ ]]; then
+    if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*\$$ ]]; then
         local var_name="$expr"
         echo "${STRING_VARS[$var_name]:-}"
         return
     fi
     
     # Handle numeric variables
-    if [[ "$expr" =~ ^[A-Z][A-Z0-9]*$ ]]; then
+    if [[ "$expr" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
         local var_name="$expr"
         echo "${NUMERIC_VARS[$var_name]:-0}"
         return
@@ -342,7 +342,7 @@ evaluate_expression() {
     fi
     
     # Handle array access (after function calls)
-    local array_regex='^([A-Z][A-Z0-9]*)\(([^)]+)\)$'
+    local array_regex='^([A-Z][A-Z0-9_]*)\(([^)]+)\)$'
     if [[ "$expr" =~ $array_regex ]]; then
         local array_name="${BASH_REMATCH[1]}"
         local index_expr="${BASH_REMATCH[2]}"
@@ -382,7 +382,7 @@ evaluate_expression() {
     fi
     
     # Handle simple arithmetic (very basic)
-    if [[ "$expr" =~ ^([A-Z0-9]+)\ *(\+|\-|\*|/)\ *([A-Z0-9]+)$ ]]; then
+    if [[ "$expr" =~ ^([A-Z0-9_]+)\ *(\+|\-|\*|/)\ *([A-Z0-9_]+)$ ]]; then
         local left="${BASH_REMATCH[1]}"
         local op="${BASH_REMATCH[2]}"
         local right="${BASH_REMATCH[3]}"
@@ -456,7 +456,7 @@ execute_let() {
     stmt=$(trim "$stmt")
     
     # Handle array assignment: VARNAME(INDEX) = VALUE
-    local array_assign_regex='^([A-Z][A-Z0-9]*)\(([^)]+)\)[[:space:]]*=[[:space:]]*(.*)$'
+    local array_assign_regex='^([A-Z][A-Z0-9_]*)\(([^)]+)\)[[:space:]]*=[[:space:]]*(.*)$'
     if [[ "$stmt" =~ $array_assign_regex ]]; then
         local array_name="${BASH_REMATCH[1]}"
         local index_expr="${BASH_REMATCH[2]}"
@@ -492,7 +492,7 @@ execute_let() {
         debug "Set $array_name($index) = $value"
         
     # Handle regular variable assignment: VARNAME = VALUE
-    elif [[ "$stmt" =~ ^([A-Z][A-Z0-9]*\$?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+    elif [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*\$?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
         local var_name="${BASH_REMATCH[1]}"
         local value="${BASH_REMATCH[2]}"
         
@@ -515,7 +515,7 @@ execute_dim() {
     local stmt="$1"
     stmt=$(trim "$stmt")
     
-    if [[ "$stmt" =~ ^([A-Z][A-Z0-9]*\$?)\(([0-9]+)\)$ ]]; then
+    if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*\$?)\(([0-9]+)\)$ ]]; then
         local var_name="${BASH_REMATCH[1]}"
         local array_size="${BASH_REMATCH[2]}"
         
@@ -537,7 +537,7 @@ execute_for() {
     local stmt="$1"
     stmt=$(trim "$stmt")
     
-    if [[ "$stmt" =~ ^([A-Z][A-Z0-9]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
+    if [[ "$stmt" =~ ^([A-Z][A-Z0-9_]*)[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]+TO[[:space:]]+([^[:space:]]+)([[:space:]]+STEP[[:space:]]+([^[:space:]]+))?$ ]]; then
         local var_name="${BASH_REMATCH[1]}"
         local start_val="${BASH_REMATCH[2]}"
         local end_val="${BASH_REMATCH[3]}"
@@ -802,7 +802,7 @@ execute_statement() {
             ;;
         *)
             # Check if it's an assignment without LET
-            local assign_regex='^[A-Z][A-Z0-9]*(\$|\([^)]+\))?[[:space:]]*='
+            local assign_regex='^[A-Z][A-Z0-9_]*(\$|\([^)]+\))?[[:space:]]*='
             if [[ "$stmt" =~ $assign_regex ]]; then
                 execute_let "$stmt"
             else
