@@ -70,12 +70,12 @@ fi
 # Test 4: Test interactive mode with timeout
 echo -e "\nTest 4: Testing interactive mode"
 if [[ -t 0 ]]; then
-    echo "Interactive mode - press ENTER within 0.1s to test input"
+    echo "Interactive mode - press ENTER within 4s to test input"
     init_keyboard
     key=$(get_key)
     if [[ -n "$key" ]]; then
-        echo "Key detected"
-        print_result "Interactive input" 0
+        echo "Key detected: '$key'"
+        print_result "Interactive input (key: '$key')" 0
     else
         print_result "Interactive input (timeout)" 0
     fi
