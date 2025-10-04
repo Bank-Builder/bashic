@@ -12,6 +12,19 @@ debug() {
     fi
 }
 
+# Function to convert key to readable name
+key_name() {
+    local key="$1"
+    case "$key" in
+        $'\n'|$'\r') echo "ENTER" ;;
+        $'\e') echo "ESC" ;;
+        ' ') echo "SPACE" ;;
+        $'\t') echo "TAB" ;;
+        $'\b') echo "BACKSPACE" ;;
+        *) echo "$key" ;;
+    esac
+}
+
 # Counter for tests
 tests_passed=0
 tests_failed=0
@@ -73,28 +86,24 @@ if [[ -t 0 ]]; then
     echo "Interactive mode - press ENTER within 4s to test input"
     key=$(init_keyboard; get_key; cleanup_keyboard)
     if [[ -n "$key" ]]; then
-        # Convert special characters to readable names
-        case "$key" in
-            $'\n'|$'\r') key_name="ENTER" ;;
-            $'\e') key_name="ESC" ;;
-            ' ') key_name="SPACE" ;;
-            $'\t') key_name="TAB" ;;
-            $'\b') key_name="BACKSPACE" ;;
-            *) key_name="$key" ;;
-        esac
-        echo "Key detected: '$key_name'"
-        print_result "Interactive input (key: '$key_name')" 0
+        key_name=$(key_name "$key")
+        # echo "Key detected: '$key_name'"
+        # print_result "Interactive input (key: '$key_name')" 0
     else
-        print_result "Interactive input (timeout)" 0
+        key_name="timeout"
+        # print_result "Interactive input (timeout)" 0
     fi
+    print_result "Interactive input ('$key_name')" 0
 else
     echo "Non-interactive mode - testing timeout behavior"
     init_keyboard
     key=$(get_key)
     if [[ -z "$key" ]]; then
-        print_result "Interactive input (timeout)" 0
+        key_name="timeout"
+        print_result "Interactive input ('$key_name')" 0
     else
-        print_result "Interactive input (unexpected key: '$key')" 1
+        key_name=$(key_name "$key")
+        print_result "Interactive input (unexpected key: '$key_name')" 1
     fi
 fi
 
