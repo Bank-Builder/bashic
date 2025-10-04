@@ -362,6 +362,22 @@ evaluate_expression() {
                 echo "$arg"
                 return
                 ;;
+            "INKEY$")
+                # Non-blocking keyboard input - return empty or character
+                # Use read with timeout for non-blocking behavior
+                local key=""
+                if read -t 0.01 -n 1 key 2>/dev/null; then
+                    # Convert to uppercase if BASHIC_UPPER_CASE is set
+                    local upper_mode="${BASHIC_UPPER_CASE:-${NUMERIC_VARS[BASHIC_UPPER_CASE]:-0}}"
+                    if [[ "$upper_mode" == "1" ]]; then
+                        key="${key^^}"
+                    fi
+                    echo "$key"
+                else
+                    echo ""
+                fi
+                return
+                ;;
             *)
                 # Not a known function, might be an array - fall through to array handling
                 ;;
