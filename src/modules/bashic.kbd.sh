@@ -49,9 +49,10 @@ get_key() {
         
         # Read a single character with timeout
         read -r -n1 -t 4 char
+        local exit_code=$?
         
-        # Check for timeout (no input)
-        if [ $? -gt 128 ] || [ -z "$char" ]; then
+        # Check for timeout (no input) - but allow special characters
+        if [ $exit_code -gt 128 ]; then
             echo ""
             return
         fi
