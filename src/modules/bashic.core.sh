@@ -91,7 +91,7 @@ load_program() {
             
             # If no colon or REM, store as single statement (original behavior)
             if [[ "$has_colon" == "false" ]]; then
-                PROGRAM_LINES[$line_num]="$statement"
+                PROGRAM_LINES[line_num]="$statement"
             else
                 # Split by colon, preserving colons in strings
                 local stmts=()
@@ -118,12 +118,12 @@ load_program() {
                 
                 # Store statements using fractional line numbers
                 if [[ ${#stmts[@]} -gt 0 ]]; then
-                    PROGRAM_LINES[$line_num]="${stmts[0]}"
+                    PROGRAM_LINES[line_num]="${stmts[0]}"
                     
                     local stmt_idx=1
                     while [[ $stmt_idx -lt ${#stmts[@]} ]]; do
                         local sub_line="${line_num}.${stmt_idx}"
-                        PROGRAM_LINES[$sub_line]="${stmts[$stmt_idx]}"
+                        PROGRAM_LINES[sub_line]="${stmts[$stmt_idx]}"
                         debug "Multi-statement: line $line_num part $stmt_idx stored as $sub_line"
                         stmt_idx=$((stmt_idx + 1))
                     done
@@ -152,7 +152,8 @@ pre_parse_program() {
     
     for line_num in "${sorted_lines[@]}"; do
         local stmt="${PROGRAM_LINES[$line_num]}"
-        local upper_stmt=$(echo "$stmt" | tr '[:lower:]' '[:upper:]')
+        local upper_stmt
+        upper_stmt=$(echo "$stmt" | tr '[:lower:]' '[:upper:]')
         
         if [[ "$upper_stmt" =~ ^DIM[[:space:]]+(.*)$ ]]; then
             local args="${BASH_REMATCH[1]}"
@@ -192,25 +193,46 @@ pre_parse_program() {
                 debug "Parsing array declaration: '$array_decl'"
                 
                 # Parse DIM statement: ARRAY(SIZE) or ARRAY$(SIZE) or ARRAY(SIZE,SIZE) for 2D
-                # For 2D arrays, we'll use the first dimension as size
                 # SIZE can be a number or a variable name (for dynamic sizing)
                 if [[ "$array_decl" =~ ^([A-Za-z][A-Za-z0-9_]*)(\$?)\(([A-Za-z0-9_%]+)([[:space:]]*,[[:space:]]*[A-Za-z0-9_%]+)?\)$ ]]; then
                     local array_name="${BASH_REMATCH[1]}"
                     local is_string="${BASH_REMATCH[2]}"
-                    local size_expr="${BASH_REMATCH[3]}"
+                    local size1_expr="${BASH_REMATCH[3]}"
+                    local size2_part="${BASH_REMATCH[4]}"
                     
-                    # Evaluate size expression (could be a variable or number)
-                    local size
-                    if [[ "$size_expr" =~ ^[0-9]+$ ]]; then
-                        size="$size_expr"
+                    # Convert array name to uppercase for consistency
+                    array_name="${array_name^^}"
+                    
+                    # Evaluate first dimension size
+                    local size1
+                    if [[ "$size1_expr" =~ ^[0-9]+$ ]]; then
+                        size1="$size1_expr"
                     else
                         # Try to evaluate as variable
-                        size="${NUMERIC_VARS[$size_expr]:-100}"
+                        size1="${NUMERIC_VARS[$size1_expr]:-100}"
                     fi
                     
-                    # Validate array size
-                    if [[ $size -gt $MAX_ARRAY_SIZE ]]; then
-                        error "Array size too large: $array_name($size)"
+                    # Check if this is a 2D array
+                    local size2=""
+                    if [[ -n "$size2_part" ]]; then
+                        # Extract second dimension
+                        local size2_expr="${size2_part#*,}"
+                        size2_expr=$(trim "$size2_expr")
+                        
+                        if [[ "$size2_expr" =~ ^[0-9]+$ ]]; then
+                            size2="$size2_expr"
+                        else
+                            # Try to evaluate as variable
+                            size2="${NUMERIC_VARS[$size2_expr]:-100}"
+                        fi
+                    fi
+                    
+                    # Validate array sizes
+                    if [[ $size1 -gt $MAX_ARRAY_SIZE ]]; then
+                        error "Array size too large: $array_name($size1)"
+                    fi
+                    if [[ -n "$size2" && $size2 -gt $MAX_ARRAY_SIZE ]]; then
+                        error "Array size too large: $array_name($size1,$size2)"
                     fi
                     
                     # Store array metadata
@@ -218,9 +240,15 @@ pre_parse_program() {
                     [[ -n "$is_string" ]] && array_type="string"
                     # Include $ in array name for string arrays for consistency
                     [[ -n "$is_string" ]] && array_name="${array_name}$"
-                    ARRAYS[$array_name]="$array_type:$size"
                     
-                    debug "DIM: $array_name($size) - $array_type"
+                    # Store dimensions: "type:size1" for 1D, "type:size1,size2" for 2D
+                    if [[ -n "$size2" ]]; then
+                        ARRAYS[array_name]="$array_type:$size1,$size2"
+                        debug "DIM: $array_name($size1,$size2) - $array_type (2D)"
+                    else
+                        ARRAYS[array_name]="$array_type:$size1"
+                        debug "DIM: $array_name($size1) - $array_type (1D)"
+                    fi
                 else
                     error "Invalid DIM statement: $stmt"
                 fi
@@ -336,7 +364,8 @@ run_program() {
                 debug "Control flow changed line from $saved_line to $CURRENT_LINE"
             else
                 # Normal flow - advance to next line
-                local next_line=$(find_next_line "$CURRENT_LINE")
+                local next_line
+                next_line=$(find_next_line "$CURRENT_LINE")
                 if [[ -n "$next_line" ]]; then
                     CURRENT_LINE="$next_line"
                 else
