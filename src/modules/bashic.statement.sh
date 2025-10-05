@@ -19,12 +19,14 @@ format_using_value() {
             
             # Format with decimal places
             local printf_format="%${pattern_length}.${decimal_length}f"
-            local formatted_value=$(printf "$printf_format" "$value")
+            local formatted_value
+            formatted_value=$(printf '%s' "$printf_format" "$value")
             result="${result//$full_pattern/$formatted_value}"
         else
             # Integer formatting - count # characters
             local printf_format="%${pattern_length}d"
-            local formatted_value=$(printf "$printf_format" "$value")
+            local formatted_value
+            formatted_value=$(printf '%s' "$printf_format" "$value")
             result="${result//$pattern/$formatted_value}"
         fi
     done
@@ -54,7 +56,8 @@ execute_print() {
         local result="$format"
         
         if [[ -n "$values" ]]; then
-            local value=$(evaluate_expression "$values")
+            local value
+            value=$(evaluate_expression "$values")
             # Use helper function to format the value
             result=$(format_using_value "$format" "$value")
         fi
@@ -85,7 +88,8 @@ execute_print() {
     done
 
     if [[ "$has_separators" == "false" ]]; then
-        local value=$(evaluate_expression "$args")
+        local value
+        value=$(evaluate_expression "$args")
         echo -e "$value"
         return
     fi
@@ -140,7 +144,8 @@ execute_print() {
             fi
         else
             # No separator found - last item
-            local value=$(evaluate_expression "$args")
+            local value
+        value=$(evaluate_expression "$args")
             output="${output}${value}"
             break
         fi
@@ -163,38 +168,90 @@ execute_let() {
     debug "Checking array assignment regex against: $stmt"
     if [[ "$stmt" =~ $array_assign_regex ]]; then
         local array_name="${BASH_REMATCH[1]}"
+        array_name="${array_name^^}"  # Convert to uppercase for consistency
         local index_expr="${BASH_REMATCH[2]}"
         local value="${BASH_REMATCH[3]}"
         debug "Array assignment matched: array_name=$array_name, index_expr=$index_expr, value=$value"
         
-        # Evaluate index and value
-        local index=$(evaluate_expression "$index_expr")
-        value=$(evaluate_expression "$value")
-        
-        # Check if array exists
-        if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
-            error "Array not declared: $array_name"
-        fi
-        
-        # Get array info
-        local array_info="${ARRAYS[$array_name]}"
-        local array_type="${array_info%:*}"
-        local array_size="${array_info#*:}"
-        
-        # Check bounds
-        if [[ $index -lt 0 || $index -gt $array_size ]]; then
-            error "Array index out of bounds: $array_name($index)"
-        fi
-        
-        # Store array element
-        local element_name="${array_name}_${index}"
-        if [[ "$array_type" == "string" ]]; then
-            STRING_VARS["$element_name"]="$value"
+        # Check if this is 2D array assignment
+        if [[ "$index_expr" =~ ^([^,]+),([^,]+)$ ]]; then
+            # 2D array assignment: array(i, j) = value
+            local index1_expr="${BASH_REMATCH[1]}"
+            local index2_expr="${BASH_REMATCH[2]}"
+            
+            # Evaluate both indices
+            local index1
+            index1=$(evaluate_expression "$index1_expr")
+            local index2
+            index2=$(evaluate_expression "$index2_expr")
+            
+            # Check if array exists
+            if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+                error "Array not declared: $array_name"
+            fi
+            
+            # Get array type and dimensions
+            local array_info="${ARRAYS[$array_name]}"
+            local array_type="${array_info%:*}"
+            local dimensions="${array_info#*:}"
+            
+            # Parse dimensions
+            if [[ "$dimensions" =~ ^([0-9]+),([0-9]+)$ ]]; then
+                local size1="${BASH_REMATCH[1]}"
+                local size2="${BASH_REMATCH[2]}"
+                
+                # Check bounds for 2D array
+                if [[ $index1 -lt 0 || $index1 -gt $size1 ]]; then
+                    error "Array index out of bounds: $array_name($index1,$index2) - first dimension"
+                fi
+                if [[ $index2 -lt 0 || $index2 -gt $size2 ]]; then
+                    error "Array index out of bounds: $array_name($index1,$index2) - second dimension"
+                fi
+                
+                # Evaluate and assign value
+                local element_name="${array_name}_${index1}_${index2}"
+                value=$(evaluate_expression "$value")
+                if [[ "$array_type" == "string" ]]; then
+                    STRING_VARS["$element_name"]="$value"
+                else
+                    NUMERIC_VARS["$element_name"]="$value"
+                fi
+                debug "Set $array_name($index1,$index2) = $value"
+            else
+                error "Array $array_name is not 2D: $dimensions"
+            fi
         else
-            NUMERIC_VARS["$element_name"]="$value"
+            # 1D array assignment: array(i) = value
+            # Evaluate index and value
+            local index
+            index=$(evaluate_expression "$index_expr")
+            value=$(evaluate_expression "$value")
+            
+            # Check if array exists
+            if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+                error "Array not declared: $array_name"
+            fi
+            
+            # Get array info
+            local array_info="${ARRAYS[$array_name]}"
+            local array_type="${array_info%:*}"
+            local array_size="${array_info#*:}"
+            
+            # Check bounds
+            if [[ $index -lt 0 || $index -gt $array_size ]]; then
+                error "Array index out of bounds: $array_name($index)"
+            fi
+            
+            # Store array element
+            local element_name="${array_name}_${index}"
+            if [[ "$array_type" == "string" ]]; then
+                STRING_VARS["$element_name"]="$value"
+            else
+                NUMERIC_VARS["$element_name"]="$value"
+            fi
+            
+            debug "Set $array_name($index) = $value"
         fi
-        
-        debug "Set $array_name($index) = $value"
         
     # Handle regular variable assignment: VARNAME = VALUE or VARNAME% = VALUE
     elif [[ "$stmt" =~ ^([A-Za-z][A-Za-z0-9_]*\$?%?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
@@ -292,7 +349,8 @@ execute_input() {
     
     if [[ ${#vars[@]} -eq 1 ]]; then
         # Single variable
-        local var_name=$(trim "${vars[0]}")
+        local var_name
+        var_name=$(trim "${vars[0]}")
         
         if [[ "$var_name" =~ \$$ ]]; then
             # String variable
@@ -371,7 +429,8 @@ execute_sleep() {
     stmt=$(trim "$stmt")
     
     if [[ -n "$stmt" ]]; then
-        local seconds=$(evaluate_expression "$stmt")
+        local seconds
+        seconds=$(evaluate_expression "$stmt")
         debug "SLEEP: Sleeping for $seconds seconds"
         sleep "$seconds"
     else
@@ -387,7 +446,8 @@ execute_randomize() {
     # RANDOMIZE optionally takes a seed value
     # In bash, we can't truly set RANDOM seed, but we can note it
     if [[ -n "$stmt" ]]; then
-        local seed=$(evaluate_expression "$stmt")
+        local seed
+        seed=$(evaluate_expression "$stmt")
         debug "RANDOMIZE: Seed value $seed (noted but RANDOM is not seedable in bash)"
         # Store the seed for reference (though bash RANDOM can't be seeded)
         RANDOM_SEED="$seed"
@@ -409,7 +469,8 @@ execute_on() {
         local line_list="${BASH_REMATCH[3]}"
         
         # Evaluate the expression to get the index
-        local index=$(evaluate_expression "$expr")
+        local index
+        index=$(evaluate_expression "$expr")
         debug "ON $action: Expression '$expr' = $index"
         
         # Parse the line number list
