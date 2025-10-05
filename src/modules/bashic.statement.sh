@@ -1,3 +1,10 @@
+#!/bin/bash
+# BASHIC Statement Module
+# bashic.statement.sh - Statement execution functions
+
+# Source global variables
+source "$(dirname "${BASH_SOURCE[0]}")/bashic.globals.sh"
+
 # Helper function to format values according to USING patterns
 format_using_value() {
     local format="$1"
@@ -651,30 +658,6 @@ execute_single_statement() {
         RANDOMIZE*)
             local args="${stmt#*RANDOMIZE}"
             execute_randomize "$args"
-            ;;
-        ON*)
-            # ON...GOTO statement: ON var GOTO line1, line2, line3
-            if [[ "$upper_stmt" =~ ^ON[[:space:]]+(.+)[[:space:]]+GOTO[[:space:]]+(.+)$ ]]; then
-                local var_expr="${BASH_REMATCH[1]}"
-                local line_list="${BASH_REMATCH[2]}"
-                
-                # Evaluate the variable
-                local index=$(evaluate_expression "$var_expr")
-                
-                # Parse comma-separated line numbers
-                IFS=',' read -ra lines <<< "$line_list"
-                
-                # Check bounds (1-based indexing in BASIC)
-                if [[ $index -lt 1 || $index -gt ${#lines[@]} ]]; then
-                    debug "ON GOTO: Index $index out of range (1-${#lines[@]}), ignoring"
-                else
-                    local target_line=$(trim "${lines[$((index - 1))]}")
-                    CURRENT_LINE="$target_line"
-                    debug "ON $index GOTO $target_line"
-                fi
-            else
-                debug "ON statement (not GOTO): ignoring"
-            fi
             ;;
         PRINT*)
             local args="${stmt#*PRINT}"

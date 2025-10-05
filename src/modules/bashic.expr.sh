@@ -2,6 +2,9 @@
 # BASHIC Expression Module
 # bashic.expr.sh - Expression evaluation using stack-based approach
 
+# Source global variables
+source "$(dirname "${BASH_SOURCE[0]}")/bashic.globals.sh"
+
 # Helper functions
 trim() {
     local var="$1"

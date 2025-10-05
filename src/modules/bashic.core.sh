@@ -2,6 +2,9 @@
 # BASHIC Core Module
 # bashic.core.sh - Program management, execution loop, and main function
 
+# Source global variables
+source "$(dirname "${BASH_SOURCE[0]}")/bashic.globals.sh"
+
 # Load program from file
 load_program() {
     local filename="$1"
@@ -40,11 +43,7 @@ load_program() {
     # Clear existing program
     PROGRAM_LINES=()
     NUMERIC_VARS=()
-    STRING_VARS=()
     ARRAYS=()
-    GOSUB_STACK=()
-    FOR_STACK=()
-    WHILE_STACK=()
     DATA_ITEMS=()
     DATA_POINTER=0
     
@@ -143,8 +142,11 @@ load_program() {
     fi
     
     # Pre-parse program for DIM and DATA statements
-    debug "PROGRAM_LINES array before pre-parsing: ${!PROGRAM_LINES[@]}"
+    debug "PROGRAM_LINES array before pre-parsing: ${!PROGRAM_LINES[*]}"
+    debug "PROGRAM_LINES array size before pre-parsing: ${#PROGRAM_LINES[@]}"
     pre_parse_program
+    debug "PROGRAM_LINES array after pre-parsing: ${!PROGRAM_LINES[*]}"
+    debug "PROGRAM_LINES array size after pre-parsing: ${#PROGRAM_LINES[@]}"
     
     debug "Program loaded: ${#PROGRAM_LINES[@]} lines"
 }
@@ -396,6 +398,7 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             -d|--debug)
+                # shellcheck disable=SC2034
                 DEBUG=true
                 shift
                 ;;

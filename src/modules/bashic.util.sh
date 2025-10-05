@@ -2,6 +2,9 @@
 # BASHIC Utility Functions Module
 # bashic.util.sh - Core utilities, constants, and global variables
 
+# Source global variables
+source "$(dirname "${BASH_SOURCE[0]}")/bashic.globals.sh"
+
 # Constants
 readonly MAX_ARRAY_SIZE=10000
 readonly BASIC_INDEX_BASE=1  # BASIC uses 1-based indexing

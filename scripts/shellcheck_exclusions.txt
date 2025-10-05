@@ -1,0 +1,39 @@
+# Auto-generated ShellCheck exclusions from bashic.globals.sh
+# Generated on: Sun  5 Oct 11:05:54 SAST 2025
+
+# shellcheck disable=SC2034
+declare -g NUMERIC_VARS
+# shellcheck disable=SC2034
+declare -g STRING_VARS
+# shellcheck disable=SC2034
+declare -g PROGRAM_LINES
+# shellcheck disable=SC2034
+declare -g ARRAYS
+# shellcheck disable=SC2034
+declare -g GOSUB_STACK
+# shellcheck disable=SC2034
+declare -g FOR_STACK
+# shellcheck disable=SC2034
+declare -g WHILE_STACK
+# shellcheck disable=SC2034
+declare -g DATA_ITEMS
+# shellcheck disable=SC2034
+declare -g DATA_POINTER
+# shellcheck disable=SC2034
+declare -g RUNNING
+# shellcheck disable=SC2034
+declare -g CURRENT_LINE
+# shellcheck disable=SC2034
+declare -g DEBUG
+# shellcheck disable=SC2034
+declare -g RANDOM_SEED
+# shellcheck disable=SC2034
+declare -g BASHIC_GRAPHICS_BUFFER
+# shellcheck disable=SC2034
+declare -g BASHIC_GRAPHICS_WIDTH
+# shellcheck disable=SC2034
+declare -g BASHIC_GRAPHICS_HEIGHT
+# shellcheck disable=SC2034
+declare -g BASHIC_INKEY_BUFFER
+# shellcheck disable=SC2034
+declare -g BASHIC_INKEY_SEMAPHORE

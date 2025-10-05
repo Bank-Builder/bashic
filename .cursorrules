@@ -94,3 +94,10 @@
 - Use quotes around variables
 - Avoid eval and similar dangerous constructs
 - Check file permissions before operations
+
+## Code Quality Requirements
+- MANDATORY: Run ShellCheck linting on ALL modules after ANY code changes
+- Fix ALL ShellCheck warnings and errors before proceeding
+- Lint modules individually: `shellcheck src/modules/bashic.*.sh`
+- Address SC2034 (unused variables), SC2145 (array/string mixing), and other issues
+- No code changes are complete without passing ShellCheck validation

@@ -6,10 +6,49 @@
 
 set -euo pipefail
 
+# ===== GLOBAL VARIABLES MODULE =====
+#!/bin/bash
+# BASHIC Global Variables Module
+# bashic.globals.sh - Shared global variables across all modules
+
+# Core program state
+declare -g -A NUMERIC_VARS
+declare -g -A STRING_VARS
+declare -g -A PROGRAM_LINES
+declare -g -A ARRAYS
+
+# Control flow stacks
+declare -g -a GOSUB_STACK
+declare -g -a FOR_STACK
+declare -g -a WHILE_STACK
+
+# Data handling
+declare -g -a DATA_ITEMS
+declare -g DATA_POINTER
+
+# Program execution state
+declare -g RUNNING
+declare -g CURRENT_LINE
+declare -g DEBUG
+
+# Random number generation
+declare -g RANDOM_SEED
+
+# Graphics state
+declare -g -a BASHIC_GRAPHICS_BUFFER
+declare -g BASHIC_GRAPHICS_WIDTH
+declare -g BASHIC_GRAPHICS_HEIGHT
+
+# Keyboard input
+declare -g BASHIC_INKEY_BUFFER
+declare -g BASHIC_INKEY_SEMAPHORE
+
 # ===== UTILITY MODULE =====
 #!/bin/bash
 # BASHIC Utility Functions Module
 # bashic.util.sh - Core utilities, constants, and global variables
+
+# Source global variables
 
 # Constants
 readonly MAX_ARRAY_SIZE=10000
@@ -275,6 +314,7 @@ INKEY_STR() {
 
 # Set up cleanup trap
 trap cleanup_keyboard EXIT
+
 # ===== STRING MODULE =====
 #!/bin/bash
 # BASHIC String Functions Module
@@ -853,6 +893,8 @@ execute_line() {
 # BASHIC Expression Evaluation Module
 # bashic.eval.sh - Expression evaluation, operators, and condition evaluation
 
+# Source global variables
+
 # Evaluate expression (optimized with single regex pattern)
 evaluate_expression() {
     local expr="$1"
@@ -1062,32 +1104,81 @@ evaluate_expression() {
     local array_regex='^([A-Za-z][A-Za-z0-9_]*)\(([^)]+)\)$'
     if [[ "$expr" =~ $array_regex ]]; then
         local array_name="${BASH_REMATCH[1]}"
+        array_name="${array_name^^}"  # Convert to uppercase for consistency
         local index_expr="${BASH_REMATCH[2]}"
         
-        # Evaluate the index expression
-        local index=$(evaluate_expression "$index_expr")
-        
-        # Check if array exists
-        if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
-            error "Array not declared: $array_name"
-        fi
-        
-        # Get array type and size
-        local array_info="${ARRAYS[$array_name]}"
-        local array_type="${array_info%:*}"
-        local array_size="${array_info#*:}"
-        
-        # Check bounds
-        if [[ $index -lt 0 || $index -gt $array_size ]]; then
-            error "Array index out of bounds: $array_name($index)"
-        fi
-        
-        # Return array element value
-        local element_name="${array_name}_${index}"
-        if [[ "$array_type" == "string" ]]; then
-            echo "${STRING_VARS[$element_name]:-}"
+        # Check if this is 2D array access (comma-separated indices)
+        if [[ "$index_expr" =~ ^([^,]+),([^,]+)$ ]]; then
+            # 2D array access: array(i, j)
+            local index1_expr="${BASH_REMATCH[1]}"
+            local index2_expr="${BASH_REMATCH[2]}"
+            
+            # Evaluate both indices
+            local index1
+            index1=$(evaluate_expression "$index1_expr")
+            local index2
+            index2=$(evaluate_expression "$index2_expr")
+            
+            # Check if array exists
+            if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+                error "Array not declared: $array_name"
+            fi
+            
+            # Get array type and dimensions
+            local array_info="${ARRAYS[$array_name]}"
+            local array_type="${array_info%:*}"
+            local dimensions="${array_info#*:}"
+            
+            # Parse dimensions
+            if [[ "$dimensions" =~ ^([0-9]+),([0-9]+)$ ]]; then
+                local size1="${BASH_REMATCH[1]}"
+                local size2="${BASH_REMATCH[2]}"
+                
+                # Check bounds for 2D array
+                if [[ $index1 -lt 0 || $index1 -gt $size1 ]]; then
+                    error "Array index out of bounds: $array_name($index1,$index2) - first dimension"
+                fi
+                if [[ $index2 -lt 0 || $index2 -gt $size2 ]]; then
+                    error "Array index out of bounds: $array_name($index1,$index2) - second dimension"
+                fi
+                
+                # Return array element value (2D: array_name_i_j)
+                local element_name="${array_name}_${index1}_${index2}"
+                if [[ "$array_type" == "string" ]]; then
+                    echo "${STRING_VARS[$element_name]:-}"
+                else
+                    echo "${NUMERIC_VARS[$element_name]:-0}"
+                fi
+            else
+                error "Array $array_name is not 2D: $dimensions"
+            fi
         else
-            echo "${NUMERIC_VARS[$element_name]:-0}"
+            # 1D array access: array(i)
+            local index
+            index=$(evaluate_expression "$index_expr")
+            
+            # Check if array exists
+            if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+                error "Array not declared: $array_name"
+            fi
+            
+            # Get array type and size
+            local array_info="${ARRAYS[$array_name]}"
+            local array_type="${array_info%:*}"
+            local array_size="${array_info#*:}"
+            
+            # Check bounds
+            if [[ $index -lt 0 || $index -gt $array_size ]]; then
+                error "Array index out of bounds: $array_name($index)"
+            fi
+            
+            # Return array element value
+            local element_name="${array_name}_${index}"
+            if [[ "$array_type" == "string" ]]; then
+                echo "${STRING_VARS[$element_name]:-}"
+            else
+                echo "${NUMERIC_VARS[$element_name]:-0}"
+            fi
         fi
         return
     fi
@@ -1132,8 +1223,10 @@ evaluate_expression() {
         right=$(trim "$right")
         
         # Evaluate both sides
-        local left_val=$(evaluate_expression "$left")
-        local right_val=$(evaluate_expression "$right")
+        local left_val
+        left_val=$(evaluate_expression "$left")
+        local right_val
+        right_val=$(evaluate_expression "$right")
         
         # Check if this is string concatenation (not arithmetic)
         if [[ ! "$left_val" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] || [[ ! "$right_val" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
@@ -1235,7 +1328,8 @@ evaluate_compound_condition() {
         local inner_condition="${BASH_REMATCH[1]}"
         
         # Recursively evaluate the inner condition
-        local inner_result=$(evaluate_compound_condition "$inner_condition")
+        local inner_result
+        inner_result=$(evaluate_compound_condition "$inner_condition")
         
         # NOT logic: true becomes false, false becomes true
         if [[ "$inner_result" == "true" ]]; then
@@ -1252,8 +1346,10 @@ evaluate_compound_condition() {
         local right_cond="${BASH_REMATCH[2]}"
         
         # Recursively evaluate both sides
-        local left_result=$(evaluate_compound_condition "$left_cond")
-        local right_result=$(evaluate_compound_condition "$right_cond")
+        local left_result
+        left_result=$(evaluate_compound_condition "$left_cond")
+        local right_result
+        right_result=$(evaluate_compound_condition "$right_cond")
         
         if [[ "$left_result" == "true" && "$right_result" == "true" ]]; then
             echo "true"
@@ -1269,8 +1365,10 @@ evaluate_compound_condition() {
         local right_cond="${BASH_REMATCH[2]}"
         
         # Recursively evaluate both sides
-        local left_result=$(evaluate_compound_condition "$left_cond")
-        local right_result=$(evaluate_compound_condition "$right_cond")
+        local left_result
+        left_result=$(evaluate_compound_condition "$left_cond")
+        local right_result
+        right_result=$(evaluate_compound_condition "$right_cond")
         
         if [[ "$left_result" == "true" || "$right_result" == "true" ]]; then
             echo "true"
@@ -1285,6 +1383,12 @@ evaluate_compound_condition() {
 }
 
 # ===== CONTROL MODULE =====
+#!/bin/bash
+# BASHIC Control Module
+# bashic.control.sh - Control flow statements (FOR/NEXT, WHILE/WEND, IF/THEN/ELSE, GOSUB/RETURN)
+
+# Source global variables
+
 execute_for() {
     local stmt="$1"
     stmt=$(trim "$stmt")
@@ -1533,14 +1637,16 @@ execute_gosub() {
     fi
     
     # Push return address onto stack
-    local next_line=$(find_next_line "$CURRENT_LINE")
+    local next_line
+    next_line=$(find_next_line "$CURRENT_LINE")
     stack_push GOSUB_STACK "$next_line"
     
     CURRENT_LINE="$line_num"
     debug "GOSUB to line $line_num, return to $next_line"
 }
 execute_return() {
-    local return_line=$(stack_pop GOSUB_STACK)
+    local return_line
+    return_line=$(stack_pop GOSUB_STACK)
     if [[ $? -ne 0 ]]; then
         error "RETURN without GOSUB"
     fi
@@ -1550,6 +1656,12 @@ execute_return() {
 }
 
 # ===== STATEMENT MODULE =====
+#!/bin/bash
+# BASHIC Statement Module
+# bashic.statement.sh - Statement execution functions
+
+# Source global variables
+
 # Helper function to format values according to USING patterns
 format_using_value() {
     local format="$1"
@@ -1571,12 +1683,14 @@ format_using_value() {
             
             # Format with decimal places
             local printf_format="%${pattern_length}.${decimal_length}f"
-            local formatted_value=$(printf "$printf_format" "$value")
+            local formatted_value
+            formatted_value=$(printf '%s' "$printf_format" "$value")
             result="${result//$full_pattern/$formatted_value}"
         else
             # Integer formatting - count # characters
             local printf_format="%${pattern_length}d"
-            local formatted_value=$(printf "$printf_format" "$value")
+            local formatted_value
+            formatted_value=$(printf '%s' "$printf_format" "$value")
             result="${result//$pattern/$formatted_value}"
         fi
     done
@@ -1606,7 +1720,8 @@ execute_print() {
         local result="$format"
         
         if [[ -n "$values" ]]; then
-            local value=$(evaluate_expression "$values")
+            local value
+            value=$(evaluate_expression "$values")
             # Use helper function to format the value
             result=$(format_using_value "$format" "$value")
         fi
@@ -1637,7 +1752,8 @@ execute_print() {
     done
 
     if [[ "$has_separators" == "false" ]]; then
-        local value=$(evaluate_expression "$args")
+        local value
+        value=$(evaluate_expression "$args")
         echo -e "$value"
         return
     fi
@@ -1692,7 +1808,8 @@ execute_print() {
             fi
         else
             # No separator found - last item
-            local value=$(evaluate_expression "$args")
+            local value
+        value=$(evaluate_expression "$args")
             output="${output}${value}"
             break
         fi
@@ -1715,38 +1832,90 @@ execute_let() {
     debug "Checking array assignment regex against: $stmt"
     if [[ "$stmt" =~ $array_assign_regex ]]; then
         local array_name="${BASH_REMATCH[1]}"
+        array_name="${array_name^^}"  # Convert to uppercase for consistency
         local index_expr="${BASH_REMATCH[2]}"
         local value="${BASH_REMATCH[3]}"
         debug "Array assignment matched: array_name=$array_name, index_expr=$index_expr, value=$value"
         
-        # Evaluate index and value
-        local index=$(evaluate_expression "$index_expr")
-        value=$(evaluate_expression "$value")
-        
-        # Check if array exists
-        if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
-            error "Array not declared: $array_name"
-        fi
-        
-        # Get array info
-        local array_info="${ARRAYS[$array_name]}"
-        local array_type="${array_info%:*}"
-        local array_size="${array_info#*:}"
-        
-        # Check bounds
-        if [[ $index -lt 0 || $index -gt $array_size ]]; then
-            error "Array index out of bounds: $array_name($index)"
-        fi
-        
-        # Store array element
-        local element_name="${array_name}_${index}"
-        if [[ "$array_type" == "string" ]]; then
-            STRING_VARS["$element_name"]="$value"
+        # Check if this is 2D array assignment
+        if [[ "$index_expr" =~ ^([^,]+),([^,]+)$ ]]; then
+            # 2D array assignment: array(i, j) = value
+            local index1_expr="${BASH_REMATCH[1]}"
+            local index2_expr="${BASH_REMATCH[2]}"
+            
+            # Evaluate both indices
+            local index1
+            index1=$(evaluate_expression "$index1_expr")
+            local index2
+            index2=$(evaluate_expression "$index2_expr")
+            
+            # Check if array exists
+            if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+                error "Array not declared: $array_name"
+            fi
+            
+            # Get array type and dimensions
+            local array_info="${ARRAYS[$array_name]}"
+            local array_type="${array_info%:*}"
+            local dimensions="${array_info#*:}"
+            
+            # Parse dimensions
+            if [[ "$dimensions" =~ ^([0-9]+),([0-9]+)$ ]]; then
+                local size1="${BASH_REMATCH[1]}"
+                local size2="${BASH_REMATCH[2]}"
+                
+                # Check bounds for 2D array
+                if [[ $index1 -lt 0 || $index1 -gt $size1 ]]; then
+                    error "Array index out of bounds: $array_name($index1,$index2) - first dimension"
+                fi
+                if [[ $index2 -lt 0 || $index2 -gt $size2 ]]; then
+                    error "Array index out of bounds: $array_name($index1,$index2) - second dimension"
+                fi
+                
+                # Evaluate and assign value
+                local element_name="${array_name}_${index1}_${index2}"
+                value=$(evaluate_expression "$value")
+                if [[ "$array_type" == "string" ]]; then
+                    STRING_VARS["$element_name"]="$value"
+                else
+                    NUMERIC_VARS["$element_name"]="$value"
+                fi
+                debug "Set $array_name($index1,$index2) = $value"
+            else
+                error "Array $array_name is not 2D: $dimensions"
+            fi
         else
-            NUMERIC_VARS["$element_name"]="$value"
+            # 1D array assignment: array(i) = value
+            # Evaluate index and value
+            local index
+            index=$(evaluate_expression "$index_expr")
+            value=$(evaluate_expression "$value")
+            
+            # Check if array exists
+            if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+                error "Array not declared: $array_name"
+            fi
+            
+            # Get array info
+            local array_info="${ARRAYS[$array_name]}"
+            local array_type="${array_info%:*}"
+            local array_size="${array_info#*:}"
+            
+            # Check bounds
+            if [[ $index -lt 0 || $index -gt $array_size ]]; then
+                error "Array index out of bounds: $array_name($index)"
+            fi
+            
+            # Store array element
+            local element_name="${array_name}_${index}"
+            if [[ "$array_type" == "string" ]]; then
+                STRING_VARS["$element_name"]="$value"
+            else
+                NUMERIC_VARS["$element_name"]="$value"
+            fi
+            
+            debug "Set $array_name($index) = $value"
         fi
-        
-        debug "Set $array_name($index) = $value"
         
     # Handle regular variable assignment: VARNAME = VALUE or VARNAME% = VALUE
     elif [[ "$stmt" =~ ^([A-Za-z][A-Za-z0-9_]*\$?%?)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
@@ -1844,7 +2013,8 @@ execute_input() {
     
     if [[ ${#vars[@]} -eq 1 ]]; then
         # Single variable
-        local var_name=$(trim "${vars[0]}")
+        local var_name
+        var_name=$(trim "${vars[0]}")
         
         if [[ "$var_name" =~ \$$ ]]; then
             # String variable
@@ -1923,7 +2093,8 @@ execute_sleep() {
     stmt=$(trim "$stmt")
     
     if [[ -n "$stmt" ]]; then
-        local seconds=$(evaluate_expression "$stmt")
+        local seconds
+        seconds=$(evaluate_expression "$stmt")
         debug "SLEEP: Sleeping for $seconds seconds"
         sleep "$seconds"
     else
@@ -1939,7 +2110,8 @@ execute_randomize() {
     # RANDOMIZE optionally takes a seed value
     # In bash, we can't truly set RANDOM seed, but we can note it
     if [[ -n "$stmt" ]]; then
-        local seed=$(evaluate_expression "$stmt")
+        local seed
+        seed=$(evaluate_expression "$stmt")
         debug "RANDOMIZE: Seed value $seed (noted but RANDOM is not seedable in bash)"
         # Store the seed for reference (though bash RANDOM can't be seeded)
         RANDOM_SEED="$seed"
@@ -1961,7 +2133,8 @@ execute_on() {
         local line_list="${BASH_REMATCH[3]}"
         
         # Evaluate the expression to get the index
-        local index=$(evaluate_expression "$expr")
+        local index
+        index=$(evaluate_expression "$expr")
         debug "ON $action: Expression '$expr' = $index"
         
         # Parse the line number list
@@ -2143,30 +2316,6 @@ execute_single_statement() {
             local args="${stmt#*RANDOMIZE}"
             execute_randomize "$args"
             ;;
-        ON*)
-            # ON...GOTO statement: ON var GOTO line1, line2, line3
-            if [[ "$upper_stmt" =~ ^ON[[:space:]]+(.+)[[:space:]]+GOTO[[:space:]]+(.+)$ ]]; then
-                local var_expr="${BASH_REMATCH[1]}"
-                local line_list="${BASH_REMATCH[2]}"
-                
-                # Evaluate the variable
-                local index=$(evaluate_expression "$var_expr")
-                
-                # Parse comma-separated line numbers
-                IFS=',' read -ra lines <<< "$line_list"
-                
-                # Check bounds (1-based indexing in BASIC)
-                if [[ $index -lt 1 || $index -gt ${#lines[@]} ]]; then
-                    debug "ON GOTO: Index $index out of range (1-${#lines[@]}), ignoring"
-                else
-                    local target_line=$(trim "${lines[$((index - 1))]}")
-                    CURRENT_LINE="$target_line"
-                    debug "ON $index GOTO $target_line"
-                fi
-            else
-                debug "ON statement (not GOTO): ignoring"
-            fi
-            ;;
         PRINT*)
             local args="${stmt#*PRINT}"
             execute_print "$args"
@@ -2239,6 +2388,8 @@ execute_single_statement() {
 # BASHIC Core Module
 # bashic.core.sh - Program management, execution loop, and main function
 
+# Source global variables
+
 # Load program from file
 load_program() {
     local filename="$1"
@@ -2277,11 +2428,7 @@ load_program() {
     # Clear existing program
     PROGRAM_LINES=()
     NUMERIC_VARS=()
-    STRING_VARS=()
     ARRAYS=()
-    GOSUB_STACK=()
-    FOR_STACK=()
-    WHILE_STACK=()
     DATA_ITEMS=()
     DATA_POINTER=0
     
@@ -2290,8 +2437,10 @@ load_program() {
     
     # Read program lines
     while IFS= read -r line; do
-        # Skip empty lines and comments
-        if [[ -z "$line" || "$line" =~ ^[[:space:]]*REM ]]; then
+        debug "Read line: '$line'"
+        # Skip empty lines and comment-only lines (no line number)
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*REM[[:space:]]*$ ]]; then
+            debug "Skipping line: '$line'"
             continue
         fi
         
@@ -2299,6 +2448,7 @@ load_program() {
         if [[ "$line" =~ ^[[:space:]]*([0-9]+)[[:space:]]+(.*)$ ]]; then
             local line_num="${BASH_REMATCH[1]}"
             local statement="${BASH_REMATCH[2]}"
+            debug "Processing line $line_num: '$statement'"
             
             # Validate line number
             if [[ $line_num -gt $MAX_LINE_NUMBER ]]; then
@@ -2328,7 +2478,8 @@ load_program() {
             
             # If no colon or REM, store as single statement (original behavior)
             if [[ "$has_colon" == "false" ]]; then
-                PROGRAM_LINES[$line_num]="$statement"
+                PROGRAM_LINES[line_num]="$statement"
+                debug "Stored single statement: $line_num -> '$statement'"
             else
                 # Split by colon, preserving colons in strings
                 local stmts=()
@@ -2355,17 +2506,19 @@ load_program() {
                 
                 # Store statements using fractional line numbers
                 if [[ ${#stmts[@]} -gt 0 ]]; then
-                    PROGRAM_LINES[$line_num]="${stmts[0]}"
+                    PROGRAM_LINES[line_num]="${stmts[0]}"
                     
                     local stmt_idx=1
                     while [[ $stmt_idx -lt ${#stmts[@]} ]]; do
                         local sub_line="${line_num}.${stmt_idx}"
-                        PROGRAM_LINES[$sub_line]="${stmts[$stmt_idx]}"
+                        PROGRAM_LINES[sub_line]="${stmts[$stmt_idx]}"
                         debug "Multi-statement: line $line_num part $stmt_idx stored as $sub_line"
                         stmt_idx=$((stmt_idx + 1))
                     done
                 fi
             fi
+        else
+            debug "Line does not match expected format: '$line'"
         fi
     done < "$filename"
     
@@ -2374,7 +2527,11 @@ load_program() {
     fi
     
     # Pre-parse program for DIM and DATA statements
+    debug "PROGRAM_LINES array before pre-parsing: ${!PROGRAM_LINES[*]}"
+    debug "PROGRAM_LINES array size before pre-parsing: ${#PROGRAM_LINES[@]}"
     pre_parse_program
+    debug "PROGRAM_LINES array after pre-parsing: ${!PROGRAM_LINES[*]}"
+    debug "PROGRAM_LINES array size after pre-parsing: ${#PROGRAM_LINES[@]}"
     
     debug "Program loaded: ${#PROGRAM_LINES[@]} lines"
 }
@@ -2387,9 +2544,10 @@ pre_parse_program() {
     local sorted_lines
     readarray -t sorted_lines < <(printf '%s\n' "${!PROGRAM_LINES[@]}" | sort -n)
     
-    for line_num in "${sorted_lines[@]}"; do
-        local stmt="${PROGRAM_LINES[$line_num]}"
-        local upper_stmt=$(echo "$stmt" | tr '[:lower:]' '[:upper:]')
+    for current_line in "${sorted_lines[@]}"; do
+        local stmt="${PROGRAM_LINES[$current_line]}"
+        local upper_stmt
+        upper_stmt=$(echo "$stmt" | tr '[:lower:]' '[:upper:]')
         
         if [[ "$upper_stmt" =~ ^DIM[[:space:]]+(.*)$ ]]; then
             local args="${BASH_REMATCH[1]}"
@@ -2429,25 +2587,46 @@ pre_parse_program() {
                 debug "Parsing array declaration: '$array_decl'"
                 
                 # Parse DIM statement: ARRAY(SIZE) or ARRAY$(SIZE) or ARRAY(SIZE,SIZE) for 2D
-                # For 2D arrays, we'll use the first dimension as size
                 # SIZE can be a number or a variable name (for dynamic sizing)
                 if [[ "$array_decl" =~ ^([A-Za-z][A-Za-z0-9_]*)(\$?)\(([A-Za-z0-9_%]+)([[:space:]]*,[[:space:]]*[A-Za-z0-9_%]+)?\)$ ]]; then
                     local array_name="${BASH_REMATCH[1]}"
                     local is_string="${BASH_REMATCH[2]}"
-                    local size_expr="${BASH_REMATCH[3]}"
+                    local size1_expr="${BASH_REMATCH[3]}"
+                    local size2_part="${BASH_REMATCH[4]}"
                     
-                    # Evaluate size expression (could be a variable or number)
-                    local size
-                    if [[ "$size_expr" =~ ^[0-9]+$ ]]; then
-                        size="$size_expr"
+                    # Convert array name to uppercase for consistency
+                    array_name="${array_name^^}"
+                    
+                    # Evaluate first dimension size
+                    local size1
+                    if [[ "$size1_expr" =~ ^[0-9]+$ ]]; then
+                        size1="$size1_expr"
                     else
                         # Try to evaluate as variable
-                        size="${NUMERIC_VARS[$size_expr]:-100}"
+                        size1="${NUMERIC_VARS[$size1_expr]:-100}"
                     fi
                     
-                    # Validate array size
-                    if [[ $size -gt $MAX_ARRAY_SIZE ]]; then
-                        error "Array size too large: $array_name($size)"
+                    # Check if this is a 2D array
+                    local size2=""
+                    if [[ -n "$size2_part" ]]; then
+                        # Extract second dimension
+                        local size2_expr="${size2_part#*,}"
+                        size2_expr=$(trim "$size2_expr")
+                        
+                        if [[ "$size2_expr" =~ ^[0-9]+$ ]]; then
+                            size2="$size2_expr"
+                        else
+                            # Try to evaluate as variable
+                            size2="${NUMERIC_VARS[$size2_expr]:-100}"
+                        fi
+                    fi
+                    
+                    # Validate array sizes
+                    if [[ $size1 -gt $MAX_ARRAY_SIZE ]]; then
+                        error "Array size too large: $array_name($size1)"
+                    fi
+                    if [[ -n "$size2" && $size2 -gt $MAX_ARRAY_SIZE ]]; then
+                        error "Array size too large: $array_name($size1,$size2)"
                     fi
                     
                     # Store array metadata
@@ -2455,9 +2634,15 @@ pre_parse_program() {
                     [[ -n "$is_string" ]] && array_type="string"
                     # Include $ in array name for string arrays for consistency
                     [[ -n "$is_string" ]] && array_name="${array_name}$"
-                    ARRAYS[$array_name]="$array_type:$size"
                     
-                    debug "DIM: $array_name($size) - $array_type"
+                    # Store dimensions: "type:size1" for 1D, "type:size1,size2" for 2D
+                    if [[ -n "$size2" ]]; then
+                        ARRAYS[array_name]="$array_type:$size1,$size2"
+                        debug "DIM: $array_name($size1,$size2) - $array_type (2D)"
+                    else
+                        ARRAYS[array_name]="$array_type:$size1"
+                        debug "DIM: $array_name($size1) - $array_type (1D)"
+                    fi
                 else
                     error "Invalid DIM statement: $stmt"
                 fi
@@ -2573,7 +2758,8 @@ run_program() {
                 debug "Control flow changed line from $saved_line to $CURRENT_LINE"
             else
                 # Normal flow - advance to next line
-                local next_line=$(find_next_line "$CURRENT_LINE")
+                local next_line
+                next_line=$(find_next_line "$CURRENT_LINE")
                 if [[ -n "$next_line" ]]; then
                     CURRENT_LINE="$next_line"
                 else
@@ -2597,6 +2783,7 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             -d|--debug)
+                # shellcheck disable=SC2034
                 DEBUG=true
                 shift
                 ;;

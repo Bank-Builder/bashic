@@ -24,44 +24,49 @@ EOF
 
 # Concatenate modules in dependency order
 echo "" >> "$BUILD_DIR/bashic"
+echo "# ===== GLOBAL VARIABLES MODULE =====" >> "$BUILD_DIR/bashic"
+cat "$MODULES_DIR/bashic.globals.sh" >> "$BUILD_DIR/bashic"
+
+echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== UTILITY MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.util.sh" >> "$BUILD_DIR/bashic"
+# Strip source lines when concatenating
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.util.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== MATH MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.math.sh" >> "$BUILD_DIR/bashic"
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.math.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== KEYBOARD MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.kbd.sh" >> "$BUILD_DIR/bashic"
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.kbd.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== STRING MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.string.sh" >> "$BUILD_DIR/bashic"
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.string.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== SCREEN MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.screen.sh" >> "$BUILD_DIR/bashic"
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.screen.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== GRAPHICS MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.graphics.sh" >> "$BUILD_DIR/bashic"
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.graphics.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== EVAL MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.eval.sh" >> "$BUILD_DIR/bashic"
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.eval.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== CONTROL MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.control.sh" >> "$BUILD_DIR/bashic"
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.control.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== STATEMENT MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.statement.sh" >> "$BUILD_DIR/bashic"
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.statement.sh" >> "$BUILD_DIR/bashic"
 
 echo "" >> "$BUILD_DIR/bashic"
 echo "# ===== CORE MODULE =====" >> "$BUILD_DIR/bashic"
-cat "$MODULES_DIR/bashic.core.sh" >> "$BUILD_DIR/bashic"
+grep -v '^source.*bashic\.globals\.sh' "$MODULES_DIR/bashic.core.sh" >> "$BUILD_DIR/bashic"
 
 # Make executable
 chmod +x "$BUILD_DIR/bashic"

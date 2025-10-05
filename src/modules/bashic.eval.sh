@@ -2,6 +2,9 @@
 # BASHIC Expression Evaluation Module
 # bashic.eval.sh - Expression evaluation, operators, and condition evaluation
 
+# Source global variables
+source "$(dirname "${BASH_SOURCE[0]}")/bashic.globals.sh"
+
 # Evaluate expression (optimized with single regex pattern)
 evaluate_expression() {
     local expr="$1"

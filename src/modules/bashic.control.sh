@@ -1,3 +1,10 @@
+#!/bin/bash
+# BASHIC Control Module
+# bashic.control.sh - Control flow statements (FOR/NEXT, WHILE/WEND, IF/THEN/ELSE, GOSUB/RETURN)
+
+# Source global variables
+source "$(dirname "${BASH_SOURCE[0]}")/bashic.globals.sh"
+
 execute_for() {
     local stmt="$1"
     stmt=$(trim "$stmt")
