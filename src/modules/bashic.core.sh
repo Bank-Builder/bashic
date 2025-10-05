@@ -53,8 +53,10 @@ load_program() {
     
     # Read program lines
     while IFS= read -r line; do
-        # Skip empty lines and comments
-        if [[ -z "$line" || "$line" =~ ^[[:space:]]*REM ]]; then
+        debug "Read line: '$line'"
+        # Skip empty lines and comment-only lines (no line number)
+        if [[ -z "$line" || "$line" =~ ^[[:space:]]*REM[[:space:]]*$ ]]; then
+            debug "Skipping line: '$line'"
             continue
         fi
         
@@ -62,6 +64,7 @@ load_program() {
         if [[ "$line" =~ ^[[:space:]]*([0-9]+)[[:space:]]+(.*)$ ]]; then
             local line_num="${BASH_REMATCH[1]}"
             local statement="${BASH_REMATCH[2]}"
+            debug "Processing line $line_num: '$statement'"
             
             # Validate line number
             if [[ $line_num -gt $MAX_LINE_NUMBER ]]; then
@@ -92,6 +95,7 @@ load_program() {
             # If no colon or REM, store as single statement (original behavior)
             if [[ "$has_colon" == "false" ]]; then
                 PROGRAM_LINES[line_num]="$statement"
+                debug "Stored single statement: $line_num -> '$statement'"
             else
                 # Split by colon, preserving colons in strings
                 local stmts=()
@@ -129,6 +133,8 @@ load_program() {
                     done
                 fi
             fi
+        else
+            debug "Line does not match expected format: '$line'"
         fi
     done < "$filename"
     
@@ -137,6 +143,7 @@ load_program() {
     fi
     
     # Pre-parse program for DIM and DATA statements
+    debug "PROGRAM_LINES array before pre-parsing: ${!PROGRAM_LINES[@]}"
     pre_parse_program
     
     debug "Program loaded: ${#PROGRAM_LINES[@]} lines"
@@ -150,8 +157,8 @@ pre_parse_program() {
     local sorted_lines
     readarray -t sorted_lines < <(printf '%s\n' "${!PROGRAM_LINES[@]}" | sort -n)
     
-    for line_num in "${sorted_lines[@]}"; do
-        local stmt="${PROGRAM_LINES[$line_num]}"
+    for current_line in "${sorted_lines[@]}"; do
+        local stmt="${PROGRAM_LINES[$current_line]}"
         local upper_stmt
         upper_stmt=$(echo "$stmt" | tr '[:lower:]' '[:upper:]')
         
