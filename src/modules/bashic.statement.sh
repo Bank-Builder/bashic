@@ -1,8 +1,65 @@
+# Helper function to format values according to USING patterns
+format_using_value() {
+    local format="$1"
+    local value="$2"
+    
+    # Parse the format string to extract # patterns
+    local result="$format"
+    
+    # Find all # patterns (consecutive # characters)
+    while [[ "$result" =~ (#+) ]]; do
+        local pattern="${BASH_REMATCH[1]}"
+        local pattern_length=${#pattern}
+        
+        # Check if this pattern is followed by .##
+        if [[ "$result" =~ ${pattern}\.([#]+) ]]; then
+            local decimal_part="${BASH_REMATCH[1]}"
+            local decimal_length=${#decimal_part}
+            local full_pattern="${pattern}.${decimal_part}"
+            
+            # Format with decimal places
+            local printf_format="%${pattern_length}.${decimal_length}f"
+            local formatted_value=$(printf "$printf_format" "$value")
+            result="${result//$full_pattern/$formatted_value}"
+        else
+            # Integer formatting - count # characters
+            local printf_format="%${pattern_length}d"
+            local formatted_value=$(printf "$printf_format" "$value")
+            result="${result//$pattern/$formatted_value}"
+        fi
+    done
+    
+    echo "$result"
+}
+
 execute_print() {
     local args="$1"
     
     if [[ -z "$args" ]]; then
         echo
+        return
+    fi
+    
+    # Check for PRINT USING statement - pre-parse semicolon
+    if [[ "$args" =~ ^[[:space:]]*USING[[:space:]]+\" ]]; then
+        # Extract format string and values using parameter expansion
+        local format_part="${args#*USING }"
+        format_part="${format_part#\"}"
+        local format="${format_part%%\"*}"
+        local values="${format_part#*\"}"
+        values="${values#;}"
+        values=$(trim "$values")
+        
+        # Simple USING implementation - replace # with values
+        local result="$format"
+        
+        if [[ -n "$values" ]]; then
+            local value=$(evaluate_expression "$values")
+            # Use helper function to format the value
+            result=$(format_using_value "$format" "$value")
+        fi
+        
+        echo "$result"
         return
     fi
     
@@ -73,7 +130,12 @@ execute_print() {
                 local spaces_needed=$((next_column - current_len))
                 output="${output}$(printf '%*s' $spaces_needed '')${value}"
             else
-                output="${output}${value}"
+                # Semicolon concatenation - add space if output is not empty
+                if [[ -n "$output" ]]; then
+                    output="${output} ${value}"
+                else
+                    output="${value}"
+                fi
                 no_newline=true
             fi
         else
@@ -194,7 +256,7 @@ execute_input() {
     
     # Display prompt if provided
     if [[ -n "$prompt" ]]; then
-        printf "%s" "$prompt"
+        printf "%s " "$prompt"
     else
         printf "? "
     fi

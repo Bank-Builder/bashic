@@ -33,7 +33,6 @@ INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
 OLD_TTY_SETTINGS=""  # Store original terminal settings
 declare -a DATA_ITEMS  # DATA statement items
 DATA_POINTER=0  # Current position in DATA_ITEMS
-RANDOM_SEED=""  # Seed value for RANDOMIZE
 
 # Error handling with context
 error_with_context() {
@@ -201,6 +200,12 @@ math_rnd() {
     echo "$result"
 }
 
+# TIMER function - returns current time as floating point seconds
+math_timer() {
+    local timer_value=$(date +%s.%3N 2>/dev/null || echo "$(date +%s).000")
+    echo "$timer_value"
+}
+
 # ===== KEYBOARD MODULE =====
 #!/bin/bash
 # BASHIC Keyboard Module
@@ -339,6 +344,110 @@ str_tab() {
     # Return spaces to reach column position
     # For simplicity, just return N spaces
     printf '%*s' "$col" ''
+}
+
+# INPUT$ function - read a single character without pressing Enter
+str_input() {
+    local count="${1:-1}"
+    
+    # Check if we're in interactive mode
+    if [[ -t 0 ]]; then
+        # Interactive mode - read character with echo
+        local char
+        # Temporarily enable echo for INPUT$ function
+        stty echo 2>/dev/null || true
+        # Use read -n 1 to read exactly 1 character with echo
+        read -n 1 char
+        # Restore raw mode (echo disabled)
+        stty raw -echo min 0 time 0 2>/dev/null || true
+        echo "$char"
+    else
+        # Non-interactive mode - read from buffer
+        if [[ ${#INKEY_BUFFER} -ge $count ]]; then
+            local result="${INKEY_BUFFER:0:$count}"
+            INKEY_BUFFER="${INKEY_BUFFER:$count}"
+            echo "$result"
+        else
+            # Not enough characters in buffer
+            echo ""
+        fi
+    fi
+}
+
+# STR$ function - convert number to string
+str_str() {
+    local num="$1"
+    # Remove trailing .0 if present
+    if [[ "$num" =~ \.0$ ]]; then
+        num="${num%.0}"
+    fi
+    echo "$num"
+}
+
+# String comparison functions
+str_compare() {
+    local str1="$1"
+    local op="$2"
+    local str2="$3"
+    
+    case "$op" in
+        "=")
+            [[ "$str1" == "$str2" ]] && echo "1" || echo "0"
+            ;;
+        "<>")
+            [[ "$str1" != "$str2" ]] && echo "1" || echo "0"
+            ;;
+        "<")
+            [[ "$str1" < "$str2" ]] && echo "1" || echo "0"
+            ;;
+        ">")
+            [[ "$str1" > "$str2" ]] && echo "1" || echo "0"
+            ;;
+        "<=")
+            [[ "$str1" < "$str2" ]] || [[ "$str1" == "$str2" ]] && echo "1" || echo "0"
+            ;;
+        ">=")
+            [[ "$str1" > "$str2" ]] || [[ "$str1" == "$str2" ]] && echo "1" || echo "0"
+            ;;
+        *)
+            echo "0"
+            ;;
+    esac
+}
+
+# String concatenation
+str_concat() {
+    local result=""
+    for arg in "$@"; do
+        result+="$arg"
+    done
+    echo "$result"
+}
+
+# String replacement
+str_replace() {
+    local str="$1"
+    local search="$2"
+    local replace="$3"
+    echo "${str//$search/$replace}"
+}
+
+# String trimming
+str_trim() {
+    local str="$1"
+    # Remove leading and trailing whitespace
+    str="${str#"${str%%[![:space:]]*}"}"
+    str="${str%"${str##*[![:space:]]}"}"
+    echo "$str"
+}
+
+# String case conversion
+str_upper() {
+    echo "${1^^}"
+}
+
+str_lower() {
+    echo "${1,,}"
 }
 
 # ===== SCREEN MODULE =====
@@ -790,6 +899,59 @@ evaluate_expression() {
         return
     fi
     
+    # Handle string functions FIRST (functions ending in $)
+    local string_func_regex='^([A-Za-z]+\$?)\(([^)]*)\)$'
+    if [[ "$expr" =~ $string_func_regex ]]; then
+        local func="${BASH_REMATCH[1]}"
+        local arg="${BASH_REMATCH[2]}"
+        
+        # Check if it's a string function (ends with $)
+        if [[ "$func" =~ \$$ ]]; then
+            case "$func" in
+                "INPUT$")
+                    str_input "$arg"
+                    return
+                    ;;
+                "STR$")
+                    arg=$(evaluate_expression "$arg")
+                    str_str "$arg"
+                    return
+                    ;;
+                "LEFT$")
+                    str_left "$arg"
+                    return
+                    ;;
+                "RIGHT$")
+                    str_right "$arg"
+                    return
+                    ;;
+                "MID$")
+                    str_mid "$arg"
+                    return
+                    ;;
+                "CHR$")
+                    str_chr "$arg"
+                    return
+                    ;;
+                "SPACE$")
+                    str_space "$arg"
+                    return
+                    ;;
+                "TIME$")
+                    str_time
+                    return
+                    ;;
+                "TAB$")
+                    str_tab "$arg"
+                    return
+                    ;;
+                *)
+                    debug "Unknown string function: $func"
+                    ;;
+            esac
+        fi
+    fi
+    
     # Handle function calls (check before array access)
     local func_regex='^([A-Za-z]+\$?)\(([^)]*)\)$'
     if [[ "$expr" =~ $func_regex ]]; then
@@ -888,19 +1050,6 @@ evaluate_expression() {
             "TAB")
                 arg=$(evaluate_expression "$arg")
                 str_tab "$arg"
-                return
-                ;;
-            "TIMER")
-                math_timer
-                return
-                ;;
-            "INPUT$")
-                str_input "$arg"
-                return
-                ;;
-            "STR$")
-                arg=$(evaluate_expression "$arg")
-                str_str "$arg"
                 return
                 ;;
             *)
@@ -1164,73 +1313,115 @@ execute_for() {
 execute_next() {
     local stmt="$1"
     
-    if [[ ${#FOR_STACK[@]} -eq 0 ]]; then
-        error "NEXT without FOR"
-    fi
-    
-    local for_info="${FOR_STACK[-1]}"
-    local var_name="${for_info%%:*}"
-    local rest="${for_info#*:}"
-    local end_val="${rest%%:*}"
-    rest="${rest#*:}"
-    local step_val="${rest%%:*}"
-    local for_line="${rest#*:}"
-    
-    # Get current variable value and increment
-    local current_val="${NUMERIC_VARS[$var_name]}"
-    
-    # Check if we need floating point arithmetic
-    if [[ "$current_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
-        # Use bc for floating point arithmetic
-        local new_val=$(echo "scale=10; $current_val + $step_val" | bc -l)
-        # Remove trailing zeros and decimal point if not needed
-        new_val=$(echo "$new_val" | sed 's/\.0*$//')
-    else
-        # Use bash arithmetic for integers
-        local new_val=$((current_val + step_val))
-    fi
-    
-    NUMERIC_VARS["$var_name"]="$new_val"
-    
-    # Check if loop should continue
-    local continue_loop=false
-    
-    # Check if we need floating point comparison
-    if [[ "$new_val" =~ \. ]] || [[ "$end_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
-        # Use bc for floating point comparison
-        local step_positive=$(echo "$step_val > 0" | bc -l)
-        if [[ "$step_positive" == "1" ]]; then
-            local result=$(echo "$new_val <= $end_val" | bc -l)
-            [[ "$result" == "1" ]] && continue_loop=true
-        else
-            local result=$(echo "$new_val >= $end_val" | bc -l)
-            [[ "$result" == "1" ]] && continue_loop=true
-        fi
-    else
-        # Use bash arithmetic for integer comparison
-        if [[ $step_val -gt 0 ]]; then
-            [[ $new_val -le $end_val ]] && continue_loop=true
-        else
-            [[ $new_val -ge $end_val ]] && continue_loop=true
+    # Parse NEXT statement - can have multiple variables: NEXT x, i, d
+    local -a variables=()
+    if [[ "$stmt" =~ ^NEXT[[:space:]]+(.*)$ ]]; then
+        local var_list="${BASH_REMATCH[1]}"
+        if [[ -n "$var_list" ]]; then
+            # Split by comma and trim each variable
+            IFS=',' read -ra variables <<< "$var_list"
+            for i in "${!variables[@]}"; do
+                variables[$i]=$(trim "${variables[$i]}")
+            done
         fi
     fi
     
-    if [[ "$continue_loop" == "true" ]]; then
-        # Jump to the line AFTER the FOR statement (the loop body starts there)
-        # Get the next line after FOR and set that as current
-        # This way the loop body executes again without re-executing FOR
-        local next_after_for=$(find_next_line "$for_line")
-        if [[ -n "$next_after_for" ]]; then
-            CURRENT_LINE="$next_after_for"
-            debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $CURRENT_LINE (after FOR at $for_line)"
-        else
-            error "NEXT: No line after FOR"
+    # If no variables specified, use the top FOR loop variable
+    if [[ ${#variables[@]} -eq 0 ]]; then
+        if [[ ${#FOR_STACK[@]} -eq 0 ]]; then
+            error "NEXT without FOR"
         fi
-    else
-        # Pop FOR stack and continue
-        stack_pop FOR_STACK >/dev/null
-        debug "NEXT: End loop, $var_name = $new_val"
+        local for_info="${FOR_STACK[-1]}"
+        local var_name="${for_info%%:*}"
+        variables=("$var_name")
     fi
+    
+    # Process each variable in reverse order (innermost loops first)
+    for ((i=${#variables[@]}-1; i>=0; i--)); do
+        local var_name="${variables[$i]}"
+        
+        # Find matching FOR loop in stack
+        local found=false
+        for ((j=${#FOR_STACK[@]}-1; j>=0; j--)); do
+            local for_info="${FOR_STACK[$j]}"
+            local stack_var="${for_info%%:*}"
+            if [[ "$stack_var" == "$var_name" ]]; then
+                found=true
+                break
+            fi
+        done
+        
+        if [[ "$found" == false ]]; then
+            error "NEXT variable '$var_name' without matching FOR"
+        fi
+        
+        # Process this FOR loop
+        local for_info="${FOR_STACK[$j]}"
+        local rest="${for_info#*:}"
+        local end_val="${rest%%:*}"
+        rest="${rest#*:}"
+        local step_val="${rest%%:*}"
+        local for_line="${rest#*:}"
+        
+        # Get current variable value and increment
+        local current_val="${NUMERIC_VARS[$var_name]}"
+        
+        # Check if we need floating point arithmetic
+        if [[ "$current_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
+            # Use bc for floating point arithmetic
+            local new_val=$(echo "scale=10; $current_val + $step_val" | bc -l)
+            # Remove trailing zeros and decimal point if not needed
+            new_val=$(echo "$new_val" | sed 's/\.0*$//')
+        else
+            # Use bash arithmetic for integers
+            local new_val=$((current_val + step_val))
+        fi
+        
+        NUMERIC_VARS["$var_name"]="$new_val"
+        
+        # Check if loop should continue
+        local continue_loop=false
+        
+        # Check if we need floating point comparison
+        if [[ "$new_val" =~ \. ]] || [[ "$end_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
+            # Use bc for floating point comparison
+            local step_positive=$(echo "$step_val > 0" | bc -l)
+            if [[ "$step_positive" == "1" ]]; then
+                local result=$(echo "$new_val <= $end_val" | bc -l)
+                [[ "$result" == "1" ]] && continue_loop=true
+            else
+                local result=$(echo "$new_val >= $end_val" | bc -l)
+                [[ "$result" == "1" ]] && continue_loop=true
+            fi
+        else
+            # Use bash arithmetic for integer comparison
+            if [[ $step_val -gt 0 ]]; then
+                [[ $new_val -le $end_val ]] && continue_loop=true
+            else
+                [[ $new_val -ge $end_val ]] && continue_loop=true
+            fi
+        fi
+        
+        if [[ "$continue_loop" == "true" ]]; then
+            # Jump to the line AFTER the FOR statement (the loop body starts there)
+            local next_after_for=$(find_next_line "$for_line")
+            if [[ -n "$next_after_for" ]]; then
+                CURRENT_LINE="$next_after_for"
+                debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $CURRENT_LINE (after FOR at $for_line)"
+            else
+                error "NEXT: No line after FOR"
+            fi
+            return
+        else
+            # Pop FOR stack and continue
+            unset FOR_STACK[$j]
+            FOR_STACK=("${FOR_STACK[@]}")  # Reindex array
+            debug "NEXT: End loop, $var_name = $new_val"
+        fi
+    done
+    
+    # All loops ended, continue to next line
+    debug "NEXT: All loops ended, continuing to next line"
 }
 execute_while() {
     local stmt="$1"
@@ -1316,6 +1507,20 @@ execute_if() {
                 execute_statement "$else_part"
             fi
         fi
+    elif [[ "$stmt" =~ ^(.+)[[:space:]]+GOTO[[:space:]]+([0-9]+)$ ]]; then
+        # Handle IF condition GOTO line (without THEN)
+        local condition="${BASH_REMATCH[1]}"
+        local target_line="${BASH_REMATCH[2]}"
+        
+        # Evaluate condition using enhanced compound condition evaluator
+        local result=$(evaluate_compound_condition "$condition")
+        
+        debug "IF GOTO condition '$condition' evaluated to $result"
+        
+        if [[ "$result" == "true" ]]; then
+            CURRENT_LINE="$target_line"
+            debug "IF GOTO: Jumping to line $target_line"
+        fi
     else
         error "Invalid IF statement: $stmt"
     fi
@@ -1345,11 +1550,68 @@ execute_return() {
 }
 
 # ===== STATEMENT MODULE =====
+# Helper function to format values according to USING patterns
+format_using_value() {
+    local format="$1"
+    local value="$2"
+    
+    # Parse the format string to extract # patterns
+    local result="$format"
+    
+    # Find all # patterns (consecutive # characters)
+    while [[ "$result" =~ (#+) ]]; do
+        local pattern="${BASH_REMATCH[1]}"
+        local pattern_length=${#pattern}
+        
+        # Check if this pattern is followed by .##
+        if [[ "$result" =~ ${pattern}\.([#]+) ]]; then
+            local decimal_part="${BASH_REMATCH[1]}"
+            local decimal_length=${#decimal_part}
+            local full_pattern="${pattern}.${decimal_part}"
+            
+            # Format with decimal places
+            local printf_format="%${pattern_length}.${decimal_length}f"
+            local formatted_value=$(printf "$printf_format" "$value")
+            result="${result//$full_pattern/$formatted_value}"
+        else
+            # Integer formatting - count # characters
+            local printf_format="%${pattern_length}d"
+            local formatted_value=$(printf "$printf_format" "$value")
+            result="${result//$pattern/$formatted_value}"
+        fi
+    done
+    
+    echo "$result"
+}
+
 execute_print() {
     local args="$1"
     
     if [[ -z "$args" ]]; then
         echo
+        return
+    fi
+    
+    # Check for PRINT USING statement - pre-parse semicolon
+    if [[ "$args" =~ ^[[:space:]]*USING[[:space:]]+\" ]]; then
+        # Extract format string and values using parameter expansion
+        local format_part="${args#*USING }"
+        format_part="${format_part#\"}"
+        local format="${format_part%%\"*}"
+        local values="${format_part#*\"}"
+        values="${values#;}"
+        values=$(trim "$values")
+        
+        # Simple USING implementation - replace # with values
+        local result="$format"
+        
+        if [[ -n "$values" ]]; then
+            local value=$(evaluate_expression "$values")
+            # Use helper function to format the value
+            result=$(format_using_value "$format" "$value")
+        fi
+        
+        echo "$result"
         return
     fi
     
@@ -1420,7 +1682,12 @@ execute_print() {
                 local spaces_needed=$((next_column - current_len))
                 output="${output}$(printf '%*s' $spaces_needed '')${value}"
             else
-                output="${output}${value}"
+                # Semicolon concatenation - add space if output is not empty
+                if [[ -n "$output" ]]; then
+                    output="${output} ${value}"
+                else
+                    output="${value}"
+                fi
                 no_newline=true
             fi
         else
@@ -1518,27 +1785,52 @@ execute_input() {
     local prompt=""
     local var_list=""
     
-    # Parse INPUT statement: INPUT "prompt", VAR or INPUT VAR
-    if [[ "$stmt" =~ ^\"([^\"]*)\",[[:space:]]*(.+)$ ]]; then
-        prompt="${BASH_REMATCH[1]}"
-        var_list="${BASH_REMATCH[2]}"
-    elif [[ "$stmt" =~ ^\"([^\"]*)\"[[:space:]]+(.+)$ ]]; then
-        prompt="${BASH_REMATCH[1]}"
-        var_list="${BASH_REMATCH[2]}"
+    # Pre-parse for semicolon to avoid regex issues
+    # Check if statement starts with quote and contains semicolon
+    if [[ "$stmt" =~ ^\" ]] && [[ "$stmt" =~ \; ]]; then
+        # Extract prompt and variable using parameter expansion (no regex needed)
+        prompt="${stmt#\"}"           # Remove leading quote
+        prompt="${prompt%%\";*}"       # Remove from first semicolon to end
+        var_list="${stmt#*;}"         # Get everything after first semicolon
+        var_list=$(trim "$var_list")
     else
-        var_list="$stmt"
+        # Use regex for comma and space cases (no semicolon involved)
+        if [[ "$stmt" =~ ^\"([^\"]*)\",[[:space:]]*(.+)$ ]]; then
+            prompt="${BASH_REMATCH[1]}"
+            var_list="${BASH_REMATCH[2]}"
+        elif [[ "$stmt" =~ ^\"([^\"]*)\"[[:space:]]+(.+)$ ]]; then
+            prompt="${BASH_REMATCH[1]}"
+            var_list="${BASH_REMATCH[2]}"
+        else
+            var_list="$stmt"
+        fi
     fi
     
     # Display prompt if provided
     if [[ -n "$prompt" ]]; then
-        printf "%s" "$prompt"
+        printf "%s " "$prompt"
     else
         printf "? "
     fi
     
     # Read input
     local input_value
-    read -r input_value
+    
+    # Check if we're in interactive mode
+    if [[ -t 0 ]]; then
+        # Interactive mode - read directly from stdin
+        read -r input_value
+    else
+        # Non-interactive mode - read from buffer or stdin
+        if [[ -n "$INKEY_BUFFER" ]]; then
+            # Read from buffer until newline
+            input_value="${INKEY_BUFFER%%$'\n'*}"
+            INKEY_BUFFER="${INKEY_BUFFER#*$'\n'}"
+        else
+            # Fallback to stdin
+            read -r input_value
+        fi
+    fi
     
     # Convert to uppercase if BASHIC_UPPER_CASE mode is enabled
     # Check both environment variable and BASIC variable
@@ -1624,6 +1916,22 @@ execute_restore() {
     DATA_POINTER=0
     debug "RESTORE: Data pointer reset to 0"
 }
+
+# Execute SLEEP command
+execute_sleep() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    if [[ -n "$stmt" ]]; then
+        local seconds=$(evaluate_expression "$stmt")
+        debug "SLEEP: Sleeping for $seconds seconds"
+        sleep "$seconds"
+    else
+        debug "SLEEP: No duration specified, sleeping for 1 second"
+        sleep 1
+    fi
+}
+
 execute_randomize() {
     local stmt="$1"
     stmt=$(trim "$stmt")
@@ -1633,20 +1941,128 @@ execute_randomize() {
     if [[ -n "$stmt" ]]; then
         local seed=$(evaluate_expression "$stmt")
         debug "RANDOMIZE: Seed value $seed (noted but RANDOM is not seedable in bash)"
+        # Store the seed for reference (though bash RANDOM can't be seeded)
+        RANDOM_SEED="$seed"
     else
-        debug "RANDOMIZE: Using default randomization"
+        debug "RANDOMIZE: No seed specified, using current time"
+        # Use current time as seed
+        RANDOM_SEED=$(date +%s)
     fi
 }
+
+# Execute ON...GOSUB or ON...GOTO command
+execute_on() {
+    local stmt="$1"
+    
+    # Parse ON expression GOSUB/GOTO line1, line2, ...
+    if [[ "$stmt" =~ ^ON[[:space:]]+([^[:space:]]+)[[:space:]]+(GOSUB|GOTO)[[:space:]]+(.*)$ ]]; then
+        local expr="${BASH_REMATCH[1]}"
+        local action="${BASH_REMATCH[2]}"
+        local line_list="${BASH_REMATCH[3]}"
+        
+        # Evaluate the expression to get the index
+        local index=$(evaluate_expression "$expr")
+        debug "ON $action: Expression '$expr' = $index"
+        
+        # Parse the line number list
+        local -a lines=()
+        IFS=',' read -ra lines <<< "$line_list"
+        
+        # Check if index is valid (1-based)
+        if [[ $index -lt 1 ]] || [[ $index -gt ${#lines[@]} ]]; then
+            debug "ON $action: Index $index out of range (1-${#lines[@]})"
+            return
+        fi
+        
+        # Get the target line number (convert to 0-based index)
+        local target_line="${lines[$((index - 1))]}"
+        target_line=$(trim "$target_line")
+        
+        debug "ON $action: Index $index -> Line $target_line"
+        
+        if [[ "$action" == "GOSUB" ]]; then
+            # Use the proper GOSUB function
+            execute_gosub "$target_line"
+        elif [[ "$action" == "GOTO" ]]; then
+            # Direct jump to target line
+            CURRENT_LINE="$target_line"
+        fi
+    else
+        error "Invalid ON statement: $stmt"
+    fi
+}
+
 execute_statement() {
     local stmt="$1"
     stmt=$(trim "$stmt")
     
     debug "Executing: $stmt"
     
+    # Check for colon separator - split into multiple statements
+    # But be careful not to split inside string literals
+    if [[ "$stmt" =~ : ]]; then
+        local -a statements=()
+        local current_stmt=""
+        local in_string=false
+        local string_char=""
+        
+        # Parse character by character to handle strings properly
+        for ((i=0; i<${#stmt}; i++)); do
+            local char="${stmt:$i:1}"
+            
+            if [[ "$char" == "\"" ]] && [[ "$in_string" == false ]]; then
+                in_string=true
+                string_char="\""
+                current_stmt+="$char"
+            elif [[ "$char" == "'" ]] && [[ "$in_string" == false ]]; then
+                in_string=true
+                string_char="'"
+                current_stmt+="$char"
+            elif [[ "$char" == "$string_char" ]] && [[ "$in_string" == true ]]; then
+                in_string=false
+                string_char=""
+                current_stmt+="$char"
+            elif [[ "$char" == ":" ]] && [[ "$in_string" == false ]]; then
+                # Found colon outside string - split here
+                statements+=("$current_stmt")
+                current_stmt=""
+            else
+                current_stmt+="$char"
+            fi
+        done
+        
+        # Add the last statement
+        if [[ -n "$current_stmt" ]]; then
+            statements+=("$current_stmt")
+        fi
+        
+        for statement in "${statements[@]}"; do
+            statement=$(trim "$statement")
+            if [[ -n "$statement" ]]; then
+                debug "Executing sub-statement: $statement"
+                execute_single_statement "$statement"
+            fi
+        done
+        return
+    fi
+    
+    execute_single_statement "$stmt"
+}
+
+execute_single_statement() {
+    local stmt="$1"
+    
     # Skip empty statements and comments
     [[ -z "$stmt" ]] && return
     [[ "$stmt" =~ ^REM ]] && return
     [[ "$stmt" =~ ^\' ]] && return
+    
+    # Handle single quote comments anywhere in the line
+    if [[ "$stmt" =~ \' ]]; then
+        stmt="${stmt%%\'*}"  # Remove everything after first single quote
+        stmt=$(trim "$stmt")
+        [[ -z "$stmt" ]] && return
+    fi
     
     # Convert to uppercase for keyword matching
     local upper_stmt="${stmt^^}"
@@ -1694,6 +2110,14 @@ execute_statement() {
             local args="${stmt#*SCREEN}"
             args=$(trim "$args")
             execute_screen "$args"
+            ;;
+        SLEEP*)
+            local args="${stmt#*SLEEP}"
+            args=$(trim "$args")
+            execute_sleep "$args"
+            ;;
+        ON*)
+            execute_on "$stmt"
             ;;
         LINE*)
             local args="${stmt#*LINE}"

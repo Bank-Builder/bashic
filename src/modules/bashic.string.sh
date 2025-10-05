@@ -74,9 +74,14 @@ str_input() {
     
     # Check if we're in interactive mode
     if [[ -t 0 ]]; then
-        # Interactive mode - read character directly
+        # Interactive mode - read character with echo
         local char
-        read -n "$count" char
+        # Temporarily enable echo for INPUT$ function
+        stty echo 2>/dev/null || true
+        # Use read -n 1 to read exactly 1 character with echo
+        read -n 1 char
+        # Restore raw mode (echo disabled)
+        stty raw -echo min 0 time 0 2>/dev/null || true
         echo "$char"
     else
         # Non-interactive mode - read from buffer

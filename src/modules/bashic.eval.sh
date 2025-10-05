@@ -48,6 +48,59 @@ evaluate_expression() {
         return
     fi
     
+    # Handle string functions FIRST (functions ending in $)
+    local string_func_regex='^([A-Za-z]+\$?)\(([^)]*)\)$'
+    if [[ "$expr" =~ $string_func_regex ]]; then
+        local func="${BASH_REMATCH[1]}"
+        local arg="${BASH_REMATCH[2]}"
+        
+        # Check if it's a string function (ends with $)
+        if [[ "$func" =~ \$$ ]]; then
+            case "$func" in
+                "INPUT$")
+                    str_input "$arg"
+                    return
+                    ;;
+                "STR$")
+                    arg=$(evaluate_expression "$arg")
+                    str_str "$arg"
+                    return
+                    ;;
+                "LEFT$")
+                    str_left "$arg"
+                    return
+                    ;;
+                "RIGHT$")
+                    str_right "$arg"
+                    return
+                    ;;
+                "MID$")
+                    str_mid "$arg"
+                    return
+                    ;;
+                "CHR$")
+                    str_chr "$arg"
+                    return
+                    ;;
+                "SPACE$")
+                    str_space "$arg"
+                    return
+                    ;;
+                "TIME$")
+                    str_time
+                    return
+                    ;;
+                "TAB$")
+                    str_tab "$arg"
+                    return
+                    ;;
+                *)
+                    debug "Unknown string function: $func"
+                    ;;
+            esac
+        fi
+    fi
+    
     # Handle function calls (check before array access)
     local func_regex='^([A-Za-z]+\$?)\(([^)]*)\)$'
     if [[ "$expr" =~ $func_regex ]]; then

@@ -66,5 +66,9 @@ cat "$MODULES_DIR/bashic.core.sh" >> "$BUILD_DIR/bashic"
 # Make executable
 chmod +x "$BUILD_DIR/bashic"
 
+# Copy to project root for easy access
+cp "$BUILD_DIR/bashic" ./bashic
+
 echo "Build complete: $BUILD_DIR/bashic"
+echo "Copied to project root: ./bashic"
 echo "File size: $(wc -l < "$BUILD_DIR/bashic") lines"
