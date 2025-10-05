@@ -220,6 +220,20 @@ execute_if() {
                 execute_statement "$else_part"
             fi
         fi
+    elif [[ "$stmt" =~ ^(.+)[[:space:]]+GOTO[[:space:]]+([0-9]+)$ ]]; then
+        # Handle IF condition GOTO line (without THEN)
+        local condition="${BASH_REMATCH[1]}"
+        local target_line="${BASH_REMATCH[2]}"
+        
+        # Evaluate condition using enhanced compound condition evaluator
+        local result=$(evaluate_compound_condition "$condition")
+        
+        debug "IF GOTO condition '$condition' evaluated to $result"
+        
+        if [[ "$result" == "true" ]]; then
+            CURRENT_LINE="$target_line"
+            debug "IF GOTO: Jumping to line $target_line"
+        fi
     else
         error "Invalid IF statement: $stmt"
     fi
