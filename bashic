@@ -891,9 +891,7 @@ evaluate_expression() {
                 return
                 ;;
             "TIMER")
-                # TIMER function returns current time as floating point seconds
-                local timer_value=$(date +%s.%3N 2>/dev/null || echo "$(date +%s).000")
-                echo "$timer_value"
+                math_timer
                 return
                 ;;
             *)

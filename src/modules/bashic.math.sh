@@ -56,3 +56,9 @@ math_rnd() {
     fi
     echo "$result"
 }
+
+# TIMER function - returns current time as floating point seconds
+math_timer() {
+    local timer_value=$(date +%s.%3N 2>/dev/null || echo "$(date +%s).000")
+    echo "$timer_value"
+}
