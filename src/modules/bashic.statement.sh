@@ -171,15 +171,25 @@ execute_input() {
     local prompt=""
     local var_list=""
     
-    # Parse INPUT statement: INPUT "prompt", VAR or INPUT VAR
-    if [[ "$stmt" =~ ^\"([^\"]*)\",[[:space:]]*(.+)$ ]]; then
-        prompt="${BASH_REMATCH[1]}"
-        var_list="${BASH_REMATCH[2]}"
-    elif [[ "$stmt" =~ ^\"([^\"]*)\"[[:space:]]+(.+)$ ]]; then
-        prompt="${BASH_REMATCH[1]}"
-        var_list="${BASH_REMATCH[2]}"
+    # Pre-parse for semicolon to avoid regex issues
+    # Check if statement starts with quote and contains semicolon
+    if [[ "$stmt" =~ ^\" ]] && [[ "$stmt" =~ \; ]]; then
+        # Extract prompt and variable using parameter expansion (no regex needed)
+        prompt="${stmt#\"}"           # Remove leading quote
+        prompt="${prompt%%\";*}"       # Remove from first semicolon to end
+        var_list="${stmt#*;}"         # Get everything after first semicolon
+        var_list=$(trim "$var_list")
     else
-        var_list="$stmt"
+        # Use regex for comma and space cases (no semicolon involved)
+        if [[ "$stmt" =~ ^\"([^\"]*)\",[[:space:]]*(.+)$ ]]; then
+            prompt="${BASH_REMATCH[1]}"
+            var_list="${BASH_REMATCH[2]}"
+        elif [[ "$stmt" =~ ^\"([^\"]*)\"[[:space:]]+(.+)$ ]]; then
+            prompt="${BASH_REMATCH[1]}"
+            var_list="${BASH_REMATCH[2]}"
+        else
+            var_list="$stmt"
+        fi
     fi
     
     # Display prompt if provided
@@ -191,7 +201,22 @@ execute_input() {
     
     # Read input
     local input_value
-    read -r input_value
+    
+    # Check if we're in interactive mode
+    if [[ -t 0 ]]; then
+        # Interactive mode - read directly from stdin
+        read -r input_value
+    else
+        # Non-interactive mode - read from buffer or stdin
+        if [[ -n "$INKEY_BUFFER" ]]; then
+            # Read from buffer until newline
+            input_value="${INKEY_BUFFER%%$'\n'*}"
+            INKEY_BUFFER="${INKEY_BUFFER#*$'\n'}"
+        else
+            # Fallback to stdin
+            read -r input_value
+        fi
+    fi
     
     # Convert to uppercase if BASHIC_UPPER_CASE mode is enabled
     # Check both environment variable and BASIC variable

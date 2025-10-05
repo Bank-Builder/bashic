@@ -894,6 +894,15 @@ evaluate_expression() {
                 math_timer
                 return
                 ;;
+            "INPUT$")
+                str_input "$arg"
+                return
+                ;;
+            "STR$")
+                arg=$(evaluate_expression "$arg")
+                str_str "$arg"
+                return
+                ;;
             *)
                 # Not a known function, might be an array - fall through to array handling
                 ;;
