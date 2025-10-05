@@ -246,14 +246,16 @@ execute_gosub() {
     fi
     
     # Push return address onto stack
-    local next_line=$(find_next_line "$CURRENT_LINE")
+    local next_line
+    next_line=$(find_next_line "$CURRENT_LINE")
     stack_push GOSUB_STACK "$next_line"
     
     CURRENT_LINE="$line_num"
     debug "GOSUB to line $line_num, return to $next_line"
 }
 execute_return() {
-    local return_line=$(stack_pop GOSUB_STACK)
+    local return_line
+    return_line=$(stack_pop GOSUB_STACK)
     if [[ $? -ne 0 ]]; then
         error "RETURN without GOSUB"
     fi
