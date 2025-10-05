@@ -33,6 +33,7 @@ INKEY_BUFFER=""  # Buffer for INKEY$ to read characters one at a time
 OLD_TTY_SETTINGS=""  # Store original terminal settings
 declare -a DATA_ITEMS  # DATA statement items
 DATA_POINTER=0  # Current position in DATA_ITEMS
+RANDOM_SEED=""  # Seed value for RANDOMIZE
 
 # Error handling with context
 error_with_context() {
@@ -887,6 +888,12 @@ evaluate_expression() {
             "TAB")
                 arg=$(evaluate_expression "$arg")
                 str_tab "$arg"
+                return
+                ;;
+            "TIMER")
+                # TIMER function returns current time as floating point seconds
+                local timer_value=$(date +%s.%3N 2>/dev/null || echo "$(date +%s).000")
+                echo "$timer_value"
                 return
                 ;;
             *)

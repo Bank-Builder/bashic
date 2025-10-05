@@ -26,73 +26,115 @@ execute_for() {
 execute_next() {
     local stmt="$1"
     
-    if [[ ${#FOR_STACK[@]} -eq 0 ]]; then
-        error "NEXT without FOR"
-    fi
-    
-    local for_info="${FOR_STACK[-1]}"
-    local var_name="${for_info%%:*}"
-    local rest="${for_info#*:}"
-    local end_val="${rest%%:*}"
-    rest="${rest#*:}"
-    local step_val="${rest%%:*}"
-    local for_line="${rest#*:}"
-    
-    # Get current variable value and increment
-    local current_val="${NUMERIC_VARS[$var_name]}"
-    
-    # Check if we need floating point arithmetic
-    if [[ "$current_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
-        # Use bc for floating point arithmetic
-        local new_val=$(echo "scale=10; $current_val + $step_val" | bc -l)
-        # Remove trailing zeros and decimal point if not needed
-        new_val=$(echo "$new_val" | sed 's/\.0*$//')
-    else
-        # Use bash arithmetic for integers
-        local new_val=$((current_val + step_val))
-    fi
-    
-    NUMERIC_VARS["$var_name"]="$new_val"
-    
-    # Check if loop should continue
-    local continue_loop=false
-    
-    # Check if we need floating point comparison
-    if [[ "$new_val" =~ \. ]] || [[ "$end_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
-        # Use bc for floating point comparison
-        local step_positive=$(echo "$step_val > 0" | bc -l)
-        if [[ "$step_positive" == "1" ]]; then
-            local result=$(echo "$new_val <= $end_val" | bc -l)
-            [[ "$result" == "1" ]] && continue_loop=true
-        else
-            local result=$(echo "$new_val >= $end_val" | bc -l)
-            [[ "$result" == "1" ]] && continue_loop=true
-        fi
-    else
-        # Use bash arithmetic for integer comparison
-        if [[ $step_val -gt 0 ]]; then
-            [[ $new_val -le $end_val ]] && continue_loop=true
-        else
-            [[ $new_val -ge $end_val ]] && continue_loop=true
+    # Parse NEXT statement - can have multiple variables: NEXT x, i, d
+    local -a variables=()
+    if [[ "$stmt" =~ ^NEXT[[:space:]]+(.*)$ ]]; then
+        local var_list="${BASH_REMATCH[1]}"
+        if [[ -n "$var_list" ]]; then
+            # Split by comma and trim each variable
+            IFS=',' read -ra variables <<< "$var_list"
+            for i in "${!variables[@]}"; do
+                variables[$i]=$(trim "${variables[$i]}")
+            done
         fi
     fi
     
-    if [[ "$continue_loop" == "true" ]]; then
-        # Jump to the line AFTER the FOR statement (the loop body starts there)
-        # Get the next line after FOR and set that as current
-        # This way the loop body executes again without re-executing FOR
-        local next_after_for=$(find_next_line "$for_line")
-        if [[ -n "$next_after_for" ]]; then
-            CURRENT_LINE="$next_after_for"
-            debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $CURRENT_LINE (after FOR at $for_line)"
-        else
-            error "NEXT: No line after FOR"
+    # If no variables specified, use the top FOR loop variable
+    if [[ ${#variables[@]} -eq 0 ]]; then
+        if [[ ${#FOR_STACK[@]} -eq 0 ]]; then
+            error "NEXT without FOR"
         fi
-    else
-        # Pop FOR stack and continue
-        stack_pop FOR_STACK >/dev/null
-        debug "NEXT: End loop, $var_name = $new_val"
+        local for_info="${FOR_STACK[-1]}"
+        local var_name="${for_info%%:*}"
+        variables=("$var_name")
     fi
+    
+    # Process each variable in reverse order (innermost loops first)
+    for ((i=${#variables[@]}-1; i>=0; i--)); do
+        local var_name="${variables[$i]}"
+        
+        # Find matching FOR loop in stack
+        local found=false
+        for ((j=${#FOR_STACK[@]}-1; j>=0; j--)); do
+            local for_info="${FOR_STACK[$j]}"
+            local stack_var="${for_info%%:*}"
+            if [[ "$stack_var" == "$var_name" ]]; then
+                found=true
+                break
+            fi
+        done
+        
+        if [[ "$found" == false ]]; then
+            error "NEXT variable '$var_name' without matching FOR"
+        fi
+        
+        # Process this FOR loop
+        local for_info="${FOR_STACK[$j]}"
+        local rest="${for_info#*:}"
+        local end_val="${rest%%:*}"
+        rest="${rest#*:}"
+        local step_val="${rest%%:*}"
+        local for_line="${rest#*:}"
+        
+        # Get current variable value and increment
+        local current_val="${NUMERIC_VARS[$var_name]}"
+        
+        # Check if we need floating point arithmetic
+        if [[ "$current_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
+            # Use bc for floating point arithmetic
+            local new_val=$(echo "scale=10; $current_val + $step_val" | bc -l)
+            # Remove trailing zeros and decimal point if not needed
+            new_val=$(echo "$new_val" | sed 's/\.0*$//')
+        else
+            # Use bash arithmetic for integers
+            local new_val=$((current_val + step_val))
+        fi
+        
+        NUMERIC_VARS["$var_name"]="$new_val"
+        
+        # Check if loop should continue
+        local continue_loop=false
+        
+        # Check if we need floating point comparison
+        if [[ "$new_val" =~ \. ]] || [[ "$end_val" =~ \. ]] || [[ "$step_val" =~ \. ]]; then
+            # Use bc for floating point comparison
+            local step_positive=$(echo "$step_val > 0" | bc -l)
+            if [[ "$step_positive" == "1" ]]; then
+                local result=$(echo "$new_val <= $end_val" | bc -l)
+                [[ "$result" == "1" ]] && continue_loop=true
+            else
+                local result=$(echo "$new_val >= $end_val" | bc -l)
+                [[ "$result" == "1" ]] && continue_loop=true
+            fi
+        else
+            # Use bash arithmetic for integer comparison
+            if [[ $step_val -gt 0 ]]; then
+                [[ $new_val -le $end_val ]] && continue_loop=true
+            else
+                [[ $new_val -ge $end_val ]] && continue_loop=true
+            fi
+        fi
+        
+        if [[ "$continue_loop" == "true" ]]; then
+            # Jump to the line AFTER the FOR statement (the loop body starts there)
+            local next_after_for=$(find_next_line "$for_line")
+            if [[ -n "$next_after_for" ]]; then
+                CURRENT_LINE="$next_after_for"
+                debug "NEXT: Continue loop, $var_name = $new_val, jumping to line $CURRENT_LINE (after FOR at $for_line)"
+            else
+                error "NEXT: No line after FOR"
+            fi
+            return
+        else
+            # Pop FOR stack and continue
+            unset FOR_STACK[$j]
+            FOR_STACK=("${FOR_STACK[@]}")  # Reindex array
+            debug "NEXT: End loop, $var_name = $new_val"
+        fi
+    done
+    
+    # All loops ended, continue to next line
+    debug "NEXT: All loops ended, continuing to next line"
 }
 execute_while() {
     local stmt="$1"

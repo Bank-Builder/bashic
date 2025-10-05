@@ -277,6 +277,22 @@ execute_restore() {
     DATA_POINTER=0
     debug "RESTORE: Data pointer reset to 0"
 }
+
+# Execute SLEEP command
+execute_sleep() {
+    local stmt="$1"
+    stmt=$(trim "$stmt")
+    
+    if [[ -n "$stmt" ]]; then
+        local seconds=$(evaluate_expression "$stmt")
+        debug "SLEEP: Sleeping for $seconds seconds"
+        sleep "$seconds"
+    else
+        debug "SLEEP: No duration specified, sleeping for 1 second"
+        sleep 1
+    fi
+}
+
 execute_randomize() {
     local stmt="$1"
     stmt=$(trim "$stmt")
@@ -286,20 +302,128 @@ execute_randomize() {
     if [[ -n "$stmt" ]]; then
         local seed=$(evaluate_expression "$stmt")
         debug "RANDOMIZE: Seed value $seed (noted but RANDOM is not seedable in bash)"
+        # Store the seed for reference (though bash RANDOM can't be seeded)
+        RANDOM_SEED="$seed"
     else
-        debug "RANDOMIZE: Using default randomization"
+        debug "RANDOMIZE: No seed specified, using current time"
+        # Use current time as seed
+        RANDOM_SEED=$(date +%s)
     fi
 }
+
+# Execute ON...GOSUB or ON...GOTO command
+execute_on() {
+    local stmt="$1"
+    
+    # Parse ON expression GOSUB/GOTO line1, line2, ...
+    if [[ "$stmt" =~ ^ON[[:space:]]+([^[:space:]]+)[[:space:]]+(GOSUB|GOTO)[[:space:]]+(.*)$ ]]; then
+        local expr="${BASH_REMATCH[1]}"
+        local action="${BASH_REMATCH[2]}"
+        local line_list="${BASH_REMATCH[3]}"
+        
+        # Evaluate the expression to get the index
+        local index=$(evaluate_expression "$expr")
+        debug "ON $action: Expression '$expr' = $index"
+        
+        # Parse the line number list
+        local -a lines=()
+        IFS=',' read -ra lines <<< "$line_list"
+        
+        # Check if index is valid (1-based)
+        if [[ $index -lt 1 ]] || [[ $index -gt ${#lines[@]} ]]; then
+            debug "ON $action: Index $index out of range (1-${#lines[@]})"
+            return
+        fi
+        
+        # Get the target line number (convert to 0-based index)
+        local target_line="${lines[$((index - 1))]}"
+        target_line=$(trim "$target_line")
+        
+        debug "ON $action: Index $index -> Line $target_line"
+        
+        if [[ "$action" == "GOSUB" ]]; then
+            # Use the proper GOSUB function
+            execute_gosub "$target_line"
+        elif [[ "$action" == "GOTO" ]]; then
+            # Direct jump to target line
+            CURRENT_LINE="$target_line"
+        fi
+    else
+        error "Invalid ON statement: $stmt"
+    fi
+}
+
 execute_statement() {
     local stmt="$1"
     stmt=$(trim "$stmt")
     
     debug "Executing: $stmt"
     
+    # Check for colon separator - split into multiple statements
+    # But be careful not to split inside string literals
+    if [[ "$stmt" =~ : ]]; then
+        local -a statements=()
+        local current_stmt=""
+        local in_string=false
+        local string_char=""
+        
+        # Parse character by character to handle strings properly
+        for ((i=0; i<${#stmt}; i++)); do
+            local char="${stmt:$i:1}"
+            
+            if [[ "$char" == "\"" ]] && [[ "$in_string" == false ]]; then
+                in_string=true
+                string_char="\""
+                current_stmt+="$char"
+            elif [[ "$char" == "'" ]] && [[ "$in_string" == false ]]; then
+                in_string=true
+                string_char="'"
+                current_stmt+="$char"
+            elif [[ "$char" == "$string_char" ]] && [[ "$in_string" == true ]]; then
+                in_string=false
+                string_char=""
+                current_stmt+="$char"
+            elif [[ "$char" == ":" ]] && [[ "$in_string" == false ]]; then
+                # Found colon outside string - split here
+                statements+=("$current_stmt")
+                current_stmt=""
+            else
+                current_stmt+="$char"
+            fi
+        done
+        
+        # Add the last statement
+        if [[ -n "$current_stmt" ]]; then
+            statements+=("$current_stmt")
+        fi
+        
+        for statement in "${statements[@]}"; do
+            statement=$(trim "$statement")
+            if [[ -n "$statement" ]]; then
+                debug "Executing sub-statement: $statement"
+                execute_single_statement "$statement"
+            fi
+        done
+        return
+    fi
+    
+    execute_single_statement "$stmt"
+}
+
+execute_single_statement() {
+    local stmt="$1"
+    
     # Skip empty statements and comments
     [[ -z "$stmt" ]] && return
     [[ "$stmt" =~ ^REM ]] && return
     [[ "$stmt" =~ ^\' ]] && return
+    
+    # Handle single quote comments anywhere in the line
+    if [[ "$stmt" =~ \' ]]; then
+        stmt="${stmt%%\'*}"  # Remove everything after first single quote
+        stmt=$(trim "$stmt")
+        [[ -z "$stmt" ]] && return
+    fi
     
     # Convert to uppercase for keyword matching
     local upper_stmt="${stmt^^}"
@@ -347,6 +471,14 @@ execute_statement() {
             local args="${stmt#*SCREEN}"
             args=$(trim "$args")
             execute_screen "$args"
+            ;;
+        SLEEP*)
+            local args="${stmt#*SLEEP}"
+            args=$(trim "$args")
+            execute_sleep "$args"
+            ;;
+        ON*)
+            execute_on "$stmt"
             ;;
         LINE*)
             local args="${stmt#*LINE}"
