@@ -211,32 +211,81 @@ evaluate_expression() {
     local array_regex='^([A-Za-z][A-Za-z0-9_]*)\(([^)]+)\)$'
     if [[ "$expr" =~ $array_regex ]]; then
         local array_name="${BASH_REMATCH[1]}"
+        array_name="${array_name^^}"  # Convert to uppercase for consistency
         local index_expr="${BASH_REMATCH[2]}"
         
-        # Evaluate the index expression
-        local index=$(evaluate_expression "$index_expr")
-        
-        # Check if array exists
-        if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
-            error "Array not declared: $array_name"
-        fi
-        
-        # Get array type and size
-        local array_info="${ARRAYS[$array_name]}"
-        local array_type="${array_info%:*}"
-        local array_size="${array_info#*:}"
-        
-        # Check bounds
-        if [[ $index -lt 0 || $index -gt $array_size ]]; then
-            error "Array index out of bounds: $array_name($index)"
-        fi
-        
-        # Return array element value
-        local element_name="${array_name}_${index}"
-        if [[ "$array_type" == "string" ]]; then
-            echo "${STRING_VARS[$element_name]:-}"
+        # Check if this is 2D array access (comma-separated indices)
+        if [[ "$index_expr" =~ ^([^,]+),([^,]+)$ ]]; then
+            # 2D array access: array(i, j)
+            local index1_expr="${BASH_REMATCH[1]}"
+            local index2_expr="${BASH_REMATCH[2]}"
+            
+            # Evaluate both indices
+            local index1
+            index1=$(evaluate_expression "$index1_expr")
+            local index2
+            index2=$(evaluate_expression "$index2_expr")
+            
+            # Check if array exists
+            if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+                error "Array not declared: $array_name"
+            fi
+            
+            # Get array type and dimensions
+            local array_info="${ARRAYS[$array_name]}"
+            local array_type="${array_info%:*}"
+            local dimensions="${array_info#*:}"
+            
+            # Parse dimensions
+            if [[ "$dimensions" =~ ^([0-9]+),([0-9]+)$ ]]; then
+                local size1="${BASH_REMATCH[1]}"
+                local size2="${BASH_REMATCH[2]}"
+                
+                # Check bounds for 2D array
+                if [[ $index1 -lt 0 || $index1 -gt $size1 ]]; then
+                    error "Array index out of bounds: $array_name($index1,$index2) - first dimension"
+                fi
+                if [[ $index2 -lt 0 || $index2 -gt $size2 ]]; then
+                    error "Array index out of bounds: $array_name($index1,$index2) - second dimension"
+                fi
+                
+                # Return array element value (2D: array_name_i_j)
+                local element_name="${array_name}_${index1}_${index2}"
+                if [[ "$array_type" == "string" ]]; then
+                    echo "${STRING_VARS[$element_name]:-}"
+                else
+                    echo "${NUMERIC_VARS[$element_name]:-0}"
+                fi
+            else
+                error "Array $array_name is not 2D: $dimensions"
+            fi
         else
-            echo "${NUMERIC_VARS[$element_name]:-0}"
+            # 1D array access: array(i)
+            local index
+            index=$(evaluate_expression "$index_expr")
+            
+            # Check if array exists
+            if [[ -z "${ARRAYS[$array_name]:-}" ]]; then
+                error "Array not declared: $array_name"
+            fi
+            
+            # Get array type and size
+            local array_info="${ARRAYS[$array_name]}"
+            local array_type="${array_info%:*}"
+            local array_size="${array_info#*:}"
+            
+            # Check bounds
+            if [[ $index -lt 0 || $index -gt $array_size ]]; then
+                error "Array index out of bounds: $array_name($index)"
+            fi
+            
+            # Return array element value
+            local element_name="${array_name}_${index}"
+            if [[ "$array_type" == "string" ]]; then
+                echo "${STRING_VARS[$element_name]:-}"
+            else
+                echo "${NUMERIC_VARS[$element_name]:-0}"
+            fi
         fi
         return
     fi
@@ -281,8 +330,10 @@ evaluate_expression() {
         right=$(trim "$right")
         
         # Evaluate both sides
-        local left_val=$(evaluate_expression "$left")
-        local right_val=$(evaluate_expression "$right")
+        local left_val
+        left_val=$(evaluate_expression "$left")
+        local right_val
+        right_val=$(evaluate_expression "$right")
         
         # Check if this is string concatenation (not arithmetic)
         if [[ ! "$left_val" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] || [[ ! "$right_val" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
@@ -384,7 +435,8 @@ evaluate_compound_condition() {
         local inner_condition="${BASH_REMATCH[1]}"
         
         # Recursively evaluate the inner condition
-        local inner_result=$(evaluate_compound_condition "$inner_condition")
+        local inner_result
+        inner_result=$(evaluate_compound_condition "$inner_condition")
         
         # NOT logic: true becomes false, false becomes true
         if [[ "$inner_result" == "true" ]]; then
@@ -401,8 +453,10 @@ evaluate_compound_condition() {
         local right_cond="${BASH_REMATCH[2]}"
         
         # Recursively evaluate both sides
-        local left_result=$(evaluate_compound_condition "$left_cond")
-        local right_result=$(evaluate_compound_condition "$right_cond")
+        local left_result
+        left_result=$(evaluate_compound_condition "$left_cond")
+        local right_result
+        right_result=$(evaluate_compound_condition "$right_cond")
         
         if [[ "$left_result" == "true" && "$right_result" == "true" ]]; then
             echo "true"
@@ -418,8 +472,10 @@ evaluate_compound_condition() {
         local right_cond="${BASH_REMATCH[2]}"
         
         # Recursively evaluate both sides
-        local left_result=$(evaluate_compound_condition "$left_cond")
-        local right_result=$(evaluate_compound_condition "$right_cond")
+        local left_result
+        left_result=$(evaluate_compound_condition "$left_cond")
+        local right_result
+        right_result=$(evaluate_compound_condition "$right_cond")
         
         if [[ "$left_result" == "true" || "$right_result" == "true" ]]; then
             echo "true"
